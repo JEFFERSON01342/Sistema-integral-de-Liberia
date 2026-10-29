@@ -1,0 +1,402 @@
+import { useState, useMemo, useEffect, useCallback } from "react";
+import {
+    Users, DollarSign, Calendar, Building2, Plus, Calculator, Save,
+    Briefcase, TrendingUp, History, FileText, Plane, HardHat, Scale, ClipboardCheck
+} from "lucide-react";
+import StatsCards from "../components/statscards";
+import Tabs from "../components/tabs";
+import NuevoEmpleado from "../components/nuevoempleado";
+import EmpleadosCards from "../components/empleadosCards";
+import RRHHCrud from "../components/rrhh/RRHHCrud";
+import MarcoLegalInfo from "../components/rrhh/MarcoLegalInfo";
+import {
+    CONTRATOS_CFG, VACACIONES_CFG, SEGURIDAD_CFG, MARCO_LEGAL_CFG, CUMPLIMIENTO_CFG
+} from "../components/rrhh/configsRRHH";
+import { useEmpleados } from "../hooks/useEmpleados";
+import { useEmpresa } from "../contexts/empresacontext";
+import { useAuth } from "../contexts/authcontext";
+import { supabase } from "../supabase/supabaseclient";
+import { registrarAuditoria } from "../utils/auditoria";
+import { calcularNomina, fmtCordoba } from "../utils/nominaNicaragua";
+import { toast } from "react-hot-toast";
+import Swal from "sweetalert2";
+
+export default function RecursosHumanos() {
+    const { rol, perfil } = useAuth();
+    const { empresaId } = useEmpresa();
+
+    const tabs = [
+        { key: "empleados", label: "Empleados", icon: <Users size={16} /> },
+        { key: "contratos", label: "Contratos", icon: <FileText size={16} /> },
+        { key: "vacaciones", label: "Vacaciones y permisos", icon: <Plane size={16} /> },
+        { key: "seguridad", label: "Seguridad e higiene", icon: <HardHat size={16} /> },
+        { key: "marco_legal", label: "Marco legal", icon: <Scale size={16} /> },
+        { key: "cumplimiento", label: "Cumplimiento", icon: <ClipboardCheck size={16} /> },
+        { key: "nomina", label: "Nómina", icon: <Calculator size={16} /> },
+        { key: "historial", label: "Historial", icon: <History size={16} /> },
+    ];
+    const [activeTab, setActiveTab] = useState("empleados");
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Admin y gerente solo ven empleados de su sucursal asignada.
+    const restringidoPorSucursal = rol === "admin" || rol === "gerente";
+    const idSucursalFiltro = restringidoPorSucursal ? (perfil?.id_sucursal || null) : null;
+
+    const { empleados, isLoading, fetchEmpleados } = useEmpleados(idSucursalFiltro);
+    const { empleados: todosLosEmpleados, fetchEmpleados: fetchTodos } = useEmpleados();
+    const refrescarEmpleados = () => { fetchEmpleados(); fetchTodos(); };
+
+    const { empleadosActivos, nominaMensual } = useMemo(() => {
+        const activos = empleados.filter((e) => e.estado === "Activo");
+        const nomina = activos.reduce((sum, e) => sum + (Number(e.salario_mensual) || 0), 0);
+        return { empleadosActivos: activos.length, nominaMensual: nomina };
+    }, [empleados]);
+
+    // ---------- NÓMINA ----------
+    const empleadosNomina = useMemo(() => empleados.filter((e) => e.estado === "Activo"), [empleados]);
+
+    const detalleNomina = useMemo(
+        () =>
+            empleadosNomina.map((e) => ({
+                empleado: e,
+                calc: calcularNomina(Number(e.salario_mensual) || 0),
+            })),
+        [empleadosNomina]
+    );
+
+    const totales = useMemo(() => {
+        return detalleNomina.reduce(
+            (acc, d) => {
+                acc.bruto += d.calc.bruto;
+                acc.deducciones += d.calc.totalDeducciones;
+                acc.neto += d.calc.salarioNeto;
+                acc.costoEmpresa += d.calc.costoTotalEmpresa;
+                return acc;
+            },
+            { bruto: 0, deducciones: 0, neto: 0, costoEmpresa: 0 }
+        );
+    }, [detalleNomina]);
+
+    const hoy = new Date();
+    const [periodoInicio, setPeriodoInicio] = useState(
+        new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10)
+    );
+    const [periodoFin, setPeriodoFin] = useState(
+        new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().slice(0, 10)
+    );
+    const [guardando, setGuardando] = useState(false);
+
+    const guardarNomina = async () => {
+        if (detalleNomina.length === 0) {
+            toast.error("No hay empleados activos para procesar.");
+            return;
+        }
+        const confirm = await Swal.fire({
+            title: "¿Procesar nómina?",
+            text: `Se generará la nómina de ${detalleNomina.length} empleado(s) del período ${periodoInicio} al ${periodoFin}.`,
+            icon: "question",
+            background: "#1e1e1e",
+            color: "#fff",
+            showCancelButton: true,
+            confirmButtonColor: "#2563eb",
+            cancelButtonColor: "#6b7280",
+            confirmButtonText: "Sí, procesar",
+            cancelButtonText: "Cancelar",
+        });
+        if (!confirm.isConfirmed) return;
+
+        setGuardando(true);
+        try {
+            const { data: periodo, error: errP } = await supabase
+                .from("nomina_periodos")
+                .insert({
+                    id_empresa: empresaId,
+                    id_sucursal: idSucursalFiltro,
+                    periodo_inicio: periodoInicio,
+                    periodo_fin: periodoFin,
+                    tipo: "mensual",
+                    estado: "procesada",
+                    total_bruto: totales.bruto,
+                    total_deducciones: totales.deducciones,
+                    total_neto: totales.neto,
+                    total_costo_empresa: totales.costoEmpresa,
+                })
+                .select()
+                .single();
+            if (errP) throw errP;
+
+            const filas = detalleNomina.map((d) => ({
+                id_periodo: periodo.id,
+                id_empleado: d.empleado.id_empleado,
+                salario_bruto: d.calc.bruto,
+                inss_laboral: d.calc.inssLaboral,
+                ir_mensual: d.calc.irMensual,
+                salario_neto: d.calc.salarioNeto,
+                inss_patronal: d.calc.inssPatronal,
+                inatec: d.calc.inatec,
+                aguinaldo_provisionado: d.calc.aguinaldo,
+                vacaciones_provisionadas: d.calc.vacaciones,
+                costo_total_empresa: d.calc.costoTotalEmpresa,
+            }));
+            const { error: errD } = await supabase.from("nomina_detalle").insert(filas);
+            if (errD) throw errD;
+
+            await registrarAuditoria(supabase, perfil, "PROCESAR_NOMINA", "Recursos Humanos",
+                `Nómina ${periodoInicio} a ${periodoFin} — ${filas.length} empleados, neto ${fmtCordoba(totales.neto)}`);
+            toast.success("✅ Nómina procesada correctamente.");
+            cargarHistorial();
+            setActiveTab("historial");
+        } catch (err) {
+            console.error("Error procesando nómina:", err.message);
+            toast.error("⚠️ Error al procesar nómina: " + err.message);
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    // ---------- HISTORIAL ----------
+    const [historial, setHistorial] = useState([]);
+    const [loadingHist, setLoadingHist] = useState(false);
+
+    const cargarHistorial = useCallback(async () => {
+        if (!empresaId) return;
+        setLoadingHist(true);
+        let query = supabase
+            .from("nomina_periodos")
+            .select("*")
+            .eq("id_empresa", empresaId)
+            .order("created_at", { ascending: false });
+        if (idSucursalFiltro) query = query.eq("id_sucursal", idSucursalFiltro);
+        const { data, error } = await query;
+        if (error) {
+            console.error("Error cargando historial de nómina:", error.message);
+            setHistorial([]);
+        } else {
+            setHistorial(data || []);
+        }
+        setLoadingHist(false);
+    }, [empresaId, idSucursalFiltro]);
+
+    useEffect(() => {
+        cargarHistorial();
+    }, [cargarHistorial]);
+
+    return (
+        <div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                <StatsCards title={"Empleados Activos"} icon={<Users className="text-title" />} value={empleadosActivos} />
+                <StatsCards title={"Nómina Bruta Mensual"} icon={<DollarSign className="text-title" />} value={fmtCordoba(nominaMensual)} />
+                <StatsCards title={"Costo Total Empresa"} icon={<Briefcase className="text-title" />} value={fmtCordoba(totales.costoEmpresa)} />
+                <StatsCards title={"Neto a Pagar"} icon={<TrendingUp className="text-green-400" />} value={fmtCordoba(totales.neto)} />
+            </div>
+
+            <div className="mt-6">
+                <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
+
+                <div className="mt-8 border border-secondary rounded-2xl p-5">
+                    {/* ------- TAB EMPLEADOS ------- */}
+                    {activeTab === "empleados" && (
+                        <>
+                            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+                                <div className="flex flex-col gap-1">
+                                    <h3 className="text-title text-xl font-bold">Gestión de Empleados</h3>
+                                    <p className="text-subtitle text-s">Administra el personal de la empresa</p>
+                                    {restringidoPorSucursal && (
+                                        <span className="inline-flex items-center gap-1 w-fit mt-1 bg-button/20 text-title text-xs font-medium px-2.5 py-1 rounded-full">
+                                            <Building2 size={12} /> Tu sucursal: {empleados.length} empleado(s) · {todosLosEmpleados.length} en total
+                                        </span>
+                                    )}
+                                </div>
+                                <button className="btn-new bg-button text-button flex flex-row h-10 gap-3 p-2 rounded-xl items-center cursor-pointer hover:opacity-95 hover:scale-110 transition" onClick={() => setIsModalOpen(true)}>
+                                    <span className="icon"><Plus /></span> Nuevo Empleado
+                                </button>
+                            </div>
+
+                            {isLoading ? (
+                                <p className="p-4 text-center text-subtitle">Cargando empleados...</p>
+                            ) : empleados.length === 0 ? (
+                                <p className="text-center text-subtitle p-4">No hay empleados registrados</p>
+                            ) : (
+                                <div className="mt-8 flex flex-col gap-4">
+                                    {empleados.map((empleado) => (
+                                        <EmpleadosCards key={empleado.id_empleado} {...empleado} rol={rol} onActualizar={refrescarEmpleados} />
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* ------- TAB CONTRATOS ------- */}
+                    {activeTab === "contratos" && (
+                        <RRHHCrud {...CONTRATOS_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
+                    {/* ------- TAB VACACIONES Y PERMISOS ------- */}
+                    {activeTab === "vacaciones" && (
+                        <RRHHCrud {...VACACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
+                    {/* ------- TAB SEGURIDAD E HIGIENE ------- */}
+                    {activeTab === "seguridad" && (
+                        <RRHHCrud {...SEGURIDAD_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
+                    {/* ------- TAB MARCO LEGAL ------- */}
+                    {activeTab === "marco_legal" && (
+                        <>
+                            <div className="flex flex-col gap-1 mb-5">
+                                <h3 className="text-title text-xl font-bold">Marco Legal</h3>
+                                <p className="text-subtitle text-s">Normativa laboral y fiscal aplicable en Nicaragua</p>
+                            </div>
+                            <MarcoLegalInfo />
+                            <RRHHCrud {...MARCO_LEGAL_CFG} empresaId={empresaId} empleados={empleados} perfil={perfil} />
+                        </>
+                    )}
+
+                    {/* ------- TAB CUMPLIMIENTO ------- */}
+                    {activeTab === "cumplimiento" && (
+                        <RRHHCrud {...CUMPLIMIENTO_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
+                    {/* ------- TAB NÓMINA ------- */}
+                    {activeTab === "nomina" && (
+                        <>
+                            <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
+                                <div className="flex flex-col gap-1">
+                                    <h3 className="text-title text-xl font-bold">Cálculo de Nómina</h3>
+                                    <p className="text-subtitle text-s">Según leyes laborales de Nicaragua (INSS 7% laboral · 21.5% patronal · INATEC 2% · IR progresivo)</p>
+                                </div>
+                                <div className="flex flex-wrap gap-3 items-end">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs text-subtitle">Inicio período</label>
+                                        <input type="date" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} className="bg-input border border-secondary rounded-lg p-2 text-sm [&::-webkit-calendar-picker-indicator]:invert" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs text-subtitle">Fin período</label>
+                                        <input type="date" value={periodoFin} onChange={(e) => setPeriodoFin(e.target.value)} className="bg-input border border-secondary rounded-lg p-2 text-sm [&::-webkit-calendar-picker-indicator]:invert" />
+                                    </div>
+                                    <button onClick={guardarNomina} disabled={guardando} className="bg-button text-button flex h-10 gap-2 px-4 rounded-xl items-center cursor-pointer hover:scale-105 transition disabled:opacity-60">
+                                        <Save size={18} /> {guardando ? "Procesando..." : "Procesar Nómina"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 overflow-x-auto">
+                                {detalleNomina.length === 0 ? (
+                                    <p className="p-4 text-center text-subtitle">No hay empleados activos para procesar.</p>
+                                ) : (
+                                    <table className="min-w-[1000px] w-full text-title text-sm">
+                                        <thead className="bg-secondary/10">
+                                            <tr className="border-b border-secondary/50 text-xs font-semibold text-subtitle">
+                                                <th className="py-3 px-3 text-left">Empleado</th>
+                                                <th className="py-3 px-3 text-right">Bruto</th>
+                                                <th className="py-3 px-3 text-right">INSS Lab. (7%)</th>
+                                                <th className="py-3 px-3 text-right">IR</th>
+                                                <th className="py-3 px-3 text-right">Neto</th>
+                                                <th className="py-3 px-3 text-right">INSS Pat. (21.5%)</th>
+                                                <th className="py-3 px-3 text-right">INATEC (2%)</th>
+                                                <th className="py-3 px-3 text-right">Aguinaldo</th>
+                                                <th className="py-3 px-3 text-right">Vacac.</th>
+                                                <th className="py-3 px-3 text-right">Costo Empresa</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {detalleNomina.map((d) => (
+                                                <tr key={d.empleado.id_empleado} className="border-t border-secondary hover:bg-secondary/10 transition-colors">
+                                                    <td className="py-3 px-3 text-left">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-medium">{d.empleado.nombre_completo}</span>
+                                                            <span className="text-xs text-subtitle">{d.empleado.puesto || "—"}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-3 text-right">{fmtCordoba(d.calc.bruto)}</td>
+                                                    <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.inssLaboral)}</td>
+                                                    <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.irMensual)}</td>
+                                                    <td className="py-3 px-3 text-right text-green-400 font-semibold">{fmtCordoba(d.calc.salarioNeto)}</td>
+                                                    <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.inssPatronal)}</td>
+                                                    <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.inatec)}</td>
+                                                    <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.aguinaldo)}</td>
+                                                    <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.vacaciones)}</td>
+                                                    <td className="py-3 px-3 text-right font-semibold">{fmtCordoba(d.calc.costoTotalEmpresa)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr className="border-t-2 border-secondary font-bold text-title">
+                                                <td className="py-3 px-3 text-left">TOTALES</td>
+                                                <td className="py-3 px-3 text-right">{fmtCordoba(totales.bruto)}</td>
+                                                <td className="py-3 px-3 text-right" colSpan={2}>-{fmtCordoba(totales.deducciones)}</td>
+                                                <td className="py-3 px-3 text-right text-green-400">{fmtCordoba(totales.neto)}</td>
+                                                <td className="py-3 px-3 text-right" colSpan={4}></td>
+                                                <td className="py-3 px-3 text-right">{fmtCordoba(totales.costoEmpresa)}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {/* ------- TAB HISTORIAL ------- */}
+                    {activeTab === "historial" && (
+                        <>
+                            <div className="flex flex-col gap-1 mb-4">
+                                <h3 className="text-title text-xl font-bold">Historial de Nóminas</h3>
+                                <p className="text-subtitle text-s">Períodos de nómina procesados</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                                {loadingHist ? (
+                                    <p className="p-4 text-center text-subtitle">Cargando historial...</p>
+                                ) : historial.length === 0 ? (
+                                    <p className="p-4 text-center text-subtitle">No hay nóminas procesadas aún.</p>
+                                ) : (
+                                    <table className="min-w-[700px] w-full text-title text-sm">
+                                        <thead className="bg-secondary/10">
+                                            <tr className="border-b border-secondary/50 text-xs font-semibold text-subtitle">
+                                                <th className="py-3 px-3 text-left">Período</th>
+                                                <th className="py-3 px-3 text-center">Tipo</th>
+                                                <th className="py-3 px-3 text-right">Total Bruto</th>
+                                                <th className="py-3 px-3 text-right">Deducciones</th>
+                                                <th className="py-3 px-3 text-right">Neto Pagado</th>
+                                                <th className="py-3 px-3 text-right">Costo Empresa</th>
+                                                <th className="py-3 px-3 text-center">Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {historial.map((h) => (
+                                                <tr key={h.id} className="border-t border-secondary hover:bg-secondary/10 transition-colors">
+                                                    <td className="py-3 px-3 text-left">
+                                                        <span className="flex items-center gap-2"><Calendar size={14} className="text-subtitle" />
+                                                            {new Date(h.periodo_inicio).toLocaleDateString("es-NI", { timeZone: "UTC" })} – {new Date(h.periodo_fin).toLocaleDateString("es-NI", { timeZone: "UTC" })}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-3 text-center capitalize">{h.tipo}</td>
+                                                    <td className="py-3 px-3 text-right">{fmtCordoba(h.total_bruto)}</td>
+                                                    <td className="py-3 px-3 text-right text-red-400">{fmtCordoba(h.total_deducciones)}</td>
+                                                    <td className="py-3 px-3 text-right text-green-400 font-semibold">{fmtCordoba(h.total_neto)}</td>
+                                                    <td className="py-3 px-3 text-right">{fmtCordoba(h.total_costo_empresa)}</td>
+                                                    <td className="py-3 px-3 text-center">
+                                                        <span className="bg-green-600/20 text-green-400 px-2 py-1 rounded-full text-xs font-semibold capitalize">{h.estado}</span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {isModalOpen && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
+                    <div className="absolute inset-0" onClick={() => setIsModalOpen(false)}></div>
+                    <div className="relative z-10 mx-4">
+                        <NuevoEmpleado onClose={() => { setIsModalOpen(false); refrescarEmpleados(); }} idSucursalFija={idSucursalFiltro} />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

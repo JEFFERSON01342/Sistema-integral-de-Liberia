@@ -1,0 +1,342 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap');
+@import 'tippy.js/dist/tippy.css';
+@import 'tippy.js/animations/perspective.css';
+@import "tailwindcss";
+
+/* ============================================================
+   DESIGN SYSTEM — LIBRERÍA LISJUASHDE ERP
+   Paleta corporativa: Sidebar oscuro fijo + Contenido limpio
+   Referencia estética: Odoo · Frappe ERPNext · Linear · NetSuite
+   ============================================================ */
+
+:root {
+  /* --- Sidebar (SIEMPRE OSCURO en ambos temas) --- */
+  --sidebar-bg:           #0D1B2A;   /* azul marino profundo */
+  --sidebar-border:       #1A2E42;
+  --sidebar-text:         #94A3B8;   /* slate-400 */
+  --sidebar-text-active:  #F1F5F9;   /* slate-100 */
+  --sidebar-hover-bg:     #1A2E42;
+  --sidebar-active-bg:    #1E40AF;   /* blue-800 */
+  --sidebar-active-text:  #FFFFFF;
+  --sidebar-section:      #64748B;   /* slate-500 */
+  --sidebar-user-bg:      #1A2E42;
+
+  /* --- Acento global (botones, links, indicadores) --- */
+  --accent:               #2563EB;   /* blue-600 */
+  --accent-hover:         #1D4ED8;   /* blue-700 */
+  --accent-soft:          #1E3A8A;
+  --accent-text:          #FFFFFF;
+
+  /* --- Estados --- */
+  --success:              #10B981;
+  --warning:              #F59E0B;
+  --danger:               #EF4444;
+  --info:                 #6366F1;
+
+  /* --- Fuente --- */
+  --font-global: "Inter", "Poppins", sans-serif;
+}
+
+/* ============================================================
+   TEMA OSCURO (por defecto)
+   ============================================================ */
+:root,
+[data-theme="dark"] {
+  --color-loginbg:  #0D1B2A;
+  --color-primary:  #0F1A28;   /* fondo de contenido */
+  --color-card:     #152235;   /* tarjetas */
+  --color-subtitle: #94A3B8;
+  --color-title:    #F1F5F9;
+  --color-button:   #2563EB;
+  --color-button-text: #FFFFFF;
+  --color-button-cancel: #334155;
+  --color-input:    #152235;
+  --color-secondary: #223349;  /* bordes / superficies suaves */
+  --color-border-cards: #223349;
+  --color-tab-indicator: #2563EB;
+  --color-tab-indicator-text: #FFFFFF;
+  --color-shadow: rgba(0, 0, 0, 0.35);
+}
+
+/* ============================================================
+   TEMA CLARO
+   ============================================================ */
+[data-theme="light"] {
+  --color-loginbg:  #F1F5F9;
+  --color-primary:  #F4F6FA;   /* fondo de contenido */
+  --color-card:     #FFFFFF;   /* tarjetas */
+  --color-subtitle: #64748B;
+  --color-title:    #0F172A;
+  --color-button:   #2563EB;
+  --color-button-text: #FFFFFF;
+  --color-button-cancel: #CBD5E1;
+  --color-input:    #FFFFFF;
+  --color-secondary: #E2E8F0;
+  --color-border-cards: #E2E8F0;
+  --color-tab-indicator: #2563EB;
+  --color-tab-indicator-text: #FFFFFF;
+  --color-shadow: rgba(15, 23, 42, 0.08);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  font-family: var(--font-global);
+  background-color: var(--color-primary);
+  color: var(--color-title);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   UTILIDADES BASE (ligadas a tokens — las usan las páginas)
+   ============================================================ */
+.bg-primary { background-color: var(--color-primary) !important; }
+.bg-card { background-color: var(--color-card) !important; }
+.bg-secondary { background-color: var(--color-secondary) !important; }
+.text-title { color: var(--color-title) !important; }
+.text-subtitle { color: var(--color-subtitle) !important; }
+.border-secondary { border-color: var(--color-secondary) !important; }
+.hover\:bg-secondary:hover { background-color: var(--color-secondary) !important; }
+.bg-button { background-color: var(--color-button) !important; }
+.text-button { color: var(--color-button-text) !important; }
+.bg-button-cancel { background-color: var(--color-button-cancel) !important; }
+.text-button-cancel { color: var(--color-button-text) !important; }
+
+.bg-input { background-color: var(--color-input) !important; color: var(--color-title) !important; }
+
+select, textarea, input, .bg-input, .bg-input * {
+  background-color: var(--color-input) !important;
+  color: var(--color-title) !important;
+}
+
+select option, select optgroup {
+  background-color: var(--color-input) !important;
+  color: var(--color-title) !important;
+}
+
+select::-ms-expand { display: none; }
+select { appearance: none; -webkit-appearance: none; -moz-appearance: none; }
+
+.bg-tab-indicator { background-color: var(--color-tab-indicator) !important; }
+.text-tab-indicator { color: var(--color-tab-indicator-text) !important; }
+.border-button { border-color: var(--color-button) !important; }
+.border-cards { border-color: var(--color-border-cards) !important; }
+.hover\:text-title:hover { color: var(--color-title) !important; }
+
+/* ============================================================
+   SIDEBAR CORPORATIVO (siempre oscuro)
+   ============================================================ */
+.erp-sidebar {
+  background-color: var(--sidebar-bg) !important;
+  border-color: var(--sidebar-border) !important;
+}
+.erp-sidebar-border { border-color: var(--sidebar-border) !important; }
+.erp-sidebar-text { color: var(--sidebar-text) !important; }
+.erp-sidebar-section { color: var(--sidebar-section) !important; }
+.erp-sidebar-user { background-color: var(--sidebar-user-bg) !important; }
+
+.erp-navlink {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  border-left: 3px solid transparent;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.erp-navlink:hover {
+  background-color: var(--sidebar-hover-bg);
+  color: var(--sidebar-text-active);
+}
+.erp-navlink.active {
+  background-color: var(--sidebar-active-bg);
+  color: var(--sidebar-active-text);
+  border-left-color: var(--sidebar-active-border, #60A5FA);
+}
+
+/* ============================================================
+   TARJETAS CORPORATIVAS
+   ============================================================ */
+.erp-card {
+  background-color: var(--color-card) !important;
+  border: 1px solid var(--color-border-cards) !important;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px var(--color-shadow);
+  transition: box-shadow .2s ease, transform .2s ease;
+}
+.erp-card-hover:hover {
+  box-shadow: 0 8px 24px var(--color-shadow);
+  transform: translateY(-2px);
+}
+
+/* ============================================================
+   TABLAS CORPORATIVAS
+   ============================================================ */
+.erp-table { width: 100%; border-collapse: collapse; }
+.erp-table thead th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-subtitle);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-secondary);
+}
+.erp-table tbody td {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--color-title);
+  border-bottom: 1px solid var(--color-secondary);
+}
+.erp-table tbody tr:hover td { background-color: var(--color-secondary); }
+
+/* ============================================================
+   BADGES DE ESTADO
+   ============================================================ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.badge-success { background: rgba(16,185,129,.15); color: #10B981; }
+.badge-warning { background: rgba(245,158,11,.15); color: #F59E0B; }
+.badge-danger  { background: rgba(239,68,68,.15);  color: #EF4444; }
+.badge-info    { background: rgba(99,102,241,.15); color: #6366F1; }
+.badge-neutral { background: var(--color-secondary); color: var(--color-subtitle); }
+
+/* ============================================================
+   BOTONES
+   ============================================================ */
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: var(--accent); color: var(--accent-text);
+  padding: 0.55rem 1rem; border-radius: 0.5rem;
+  font-weight: 600; font-size: 0.875rem;
+  border: none; cursor: pointer;
+  transition: background-color .15s ease, transform .1s ease;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:active { transform: scale(0.98); }
+
+.btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: transparent; color: var(--color-title);
+  padding: 0.55rem 1rem; border-radius: 0.5rem;
+  font-weight: 600; font-size: 0.875rem;
+  border: 1px solid var(--color-secondary); cursor: pointer;
+  transition: background-color .15s ease, transform .1s ease;
+}
+.btn-secondary:hover { background: var(--color-secondary); }
+.btn-secondary:active { transform: scale(0.98); }
+
+.btn-danger {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: var(--danger); color: #fff;
+  padding: 0.55rem 1rem; border-radius: 0.5rem;
+  font-weight: 600; font-size: 0.875rem;
+  border: none; cursor: pointer;
+  transition: filter .15s ease, transform .1s ease;
+}
+.btn-danger:hover { filter: brightness(1.08); }
+.btn-danger:active { transform: scale(0.98); }
+
+/* ============================================================
+   SCROLLBAR SUTIL
+   ============================================================ */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.65); }
+
+/* Scrollbar del sidebar (fondo oscuro) */
+.erp-sidebar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); }
+.erp-sidebar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.45); }
+
+/* ============================================================
+   ANIMACIONES
+   ============================================================ */
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-down { animation: fade-in-down .4s ease both; }
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-left { animation: slide-in-left .25s ease both; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in { animation: fade-in .2s ease both; }
+
+/* Tippy corporativo */
+.tippy-box[data-theme~='bot'] {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+.tippy-box[data-theme~='bot'] .tippy-arrow { color: var(--accent); }
+
+/* ============================================================
+   PREFERENCIAS DE CONFIGURACIÓN (densidad / animaciones)
+   ============================================================ */
+.erp-compact .erp-main { padding: 0.75rem !important; gap: 0.75rem !important; }
+.erp-compact .erp-card { border-radius: 0.6rem; }
+.erp-compact .erp-table thead th { padding-top: 0.45rem; padding-bottom: 0.45rem; }
+.erp-compact .erp-table tbody td { padding: 0.45rem 0.75rem; }
+.erp-compact .erp-navlink { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+
+.erp-no-anim *, .erp-no-anim *::before, .erp-no-anim *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Interruptor (toggle) de configuración */
+.erp-switch {
+  position: relative; width: 2.6rem; height: 1.45rem; border-radius: 9999px;
+  background-color: var(--color-secondary); border: 1px solid var(--color-border-cards);
+  transition: background-color .2s ease; flex-shrink: 0; cursor: pointer;
+}
+.erp-switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 1.1rem; height: 1.1rem;
+  border-radius: 9999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  transition: transform .2s ease;
+}
+.erp-switch.on { background-color: var(--accent, #2563EB); border-color: transparent; }
+.erp-switch.on::after { transform: translateX(1.15rem); }
+
+.erp-tab {
+  display: flex; align-items: center; gap: .5rem; padding: .6rem .9rem; border-radius: .5rem;
+  font-size: .875rem; font-weight: 500; color: var(--color-subtitle); white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease; cursor: pointer;
+}
+.erp-tab:hover { background-color: var(--color-secondary); color: var(--color-title); }
+.erp-tab.active { background-color: var(--accent, #2563EB); color: #fff; }
+
+.erp-option {
+  border: 2px solid var(--color-border-cards); border-radius: .75rem; cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.erp-option:hover { transform: translateY(-1px); }
+.erp-option.selected { border-color: var(--accent, #2563EB); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #2563EB) 25%, transparent); }
