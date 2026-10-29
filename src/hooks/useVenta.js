@@ -1,14 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
+import { useAuth } from "../contexts/authcontext";
 
 export function useVenta() {
   const [ventas, setVentas] = useState(undefined);
   const { empresaId } = useEmpresa();
+  const { perfil, rol } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchVentas = useCallback(async () => {
+    if (rol !== "superadmin" && !perfil?.id_sucursal) {
+      setVentas([]);
+      setError("El perfil no tiene una sucursal asignada.");
+      return;
+    }
     if (!empresaId) {
       setVentas([]);
       return;
@@ -17,19 +24,26 @@ export function useVenta() {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: queryError } = await supabase
+      let ventasQuery = supabase
         .from("ventas")
         .select(
           "id_venta, numero, id_cliente, fecha_operativa, registrada_en, metodo_pago, subtotal, impuesto, total, efectivo_recibido, cambio, costo_total_fifo, id_comprobante, id_sucursal, id_sesion, registrada_por"
         )
-        .eq("id_empresa", empresaId)
-        .order("registrada_en", { ascending: false });
+        .eq("id_empresa", empresaId);
+      if (rol !== "superadmin") {
+        ventasQuery = ventasQuery.eq("id_sucursal", perfil.id_sucursal);
+      }
+      const { data, error: queryError } = await ventasQuery.order("registrada_en", { ascending: false });
 
       if (queryError) throw queryError;
-      const { data: sucursales, error: sucursalesError } = await supabase
+      let sucursalesQuery = supabase
         .from("sucursales")
         .select("id_sucursal,nombre")
         .eq("id_empresa", empresaId);
+      if (rol !== "superadmin") {
+        sucursalesQuery = sucursalesQuery.eq("id_sucursal", perfil.id_sucursal);
+      }
+      const { data: sucursales, error: sucursalesError } = await sucursalesQuery;
       if (sucursalesError) throw sucursalesError;
       const sucursalesPorId = new Map((sucursales || []).map((sucursal) => [
         String(sucursal.id_sucursal),
@@ -56,7 +70,7 @@ export function useVenta() {
     } finally {
       setIsLoading(false);
     }
-  }, [empresaId]);
+  }, [empresaId, perfil?.id_sucursal, rol]);
 
   useEffect(() => {
     fetchVentas();

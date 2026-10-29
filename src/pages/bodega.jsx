@@ -34,7 +34,7 @@ export default function Bodega() {
   const [ordenSeleccionada, setOrdenSeleccionada] = useState(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [guardandoUbicacion, setGuardandoUbicacion] = useState(false);
-  const esAdministrador = rol === "admin" || rol === "superadmin";
+  const puedeCrearUbicaciones = ["admin", "superadmin", "bodega"].includes(rol);
 
   useEffect(() => {
     let activo = true;
@@ -91,7 +91,7 @@ export default function Bodega() {
           .select("id_ubicacion,id_bodega,codigo,nombre,tipo_area,pasillo,estante,nivel,posicion,activa")
           .eq("id_empresa", empresaId).eq("id_sucursal", idSucursalNumero).order("codigo"),
         supabase.from("movimientos_inventario")
-          .select("id_movimiento,id_producto,id_ubicacion,tipo,cantidad_delta,costo_total,descripcion,fecha_operativa,registrado_en")
+          .select("id_movimiento,id_producto,id_ubicacion,tipo,cantidad_delta,descripcion,fecha_operativa,registrado_en")
           .eq("id_empresa", empresaId).eq("id_sucursal", idSucursalNumero)
           .order("registrado_en", { ascending: false }).limit(100),
         supabase.from("productos")
@@ -221,9 +221,11 @@ export default function Bodega() {
           <p className="text-subtitle">Existencias por ubicación, recepciones y movimientos trazables.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to="/dashboard/transferencias" className="btn-secondary inline-flex items-center gap-2">
-            <ArrowLeftRight size={18} /> Transferencias
-          </Link>
+          {rol !== "bodega" && (
+            <Link to="/dashboard/transferencias" className="btn-secondary inline-flex items-center gap-2">
+              <ArrowLeftRight size={18} /> Transferencias
+            </Link>
+          )}
           <button type="button" onClick={() => { cargarBodega(); fetchCompras(); }} disabled={cargando}
             className="btn-secondary inline-flex items-center gap-2">
             <RefreshCw size={17} className={cargando ? "animate-spin" : ""} /> Actualizar
@@ -270,7 +272,7 @@ export default function Bodega() {
             <h2 className="text-lg font-semibold">Ubicaciones de {sucursalActual?.nombre || `sucursal ${idSucursal}`}</h2>
             <p className="text-sm text-subtitle">{bodegas.length} bodega(s) registradas.</p>
           </div>
-          {esAdministrador && (
+          {puedeCrearUbicaciones && (
             <button type="button" onClick={() => setMostrarFormulario((visible) => !visible)}
               className="btn-primary inline-flex items-center gap-2">
               <PackagePlus size={18} /> {mostrarFormulario ? "Cancelar" : "Nueva ubicación"}

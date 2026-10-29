@@ -94,7 +94,7 @@ function csvCell(value, isNumeric = false) {
 
 export default function EstadosFinancieros() {
     const { empresaId } = useEmpresa();
-    const { perfil } = useAuth();
+    const { perfil, rol } = useAuth();
     const [activeTab, setActiveTab] = useState("balance");
     const [fechaInicio, setFechaInicio] = usePersistentState("finance_erp_fecha_inicio", getTodayString());
     const [fechaCierre, setFechaCierre] = usePersistentState("finance_erp_fecha_cierre", getTodayString());
@@ -276,9 +276,11 @@ export default function EstadosFinancieros() {
                     <button onClick={exportarReporte} disabled={isLoading} className="flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
                         <Download size={16} /> Exportar
                     </button>
-                    <button onClick={handleRegistrarDepreciacion} disabled={isProcessing || isLoading} className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
-                        <Zap size={16} /> {isProcessing ? "Procesando..." : "Registrar depreciación"}
-                    </button>
+                    {["superadmin", "admin"].includes(rol) && (
+                        <button onClick={handleRegistrarDepreciacion} disabled={isProcessing || isLoading} className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
+                            <Zap size={16} /> {isProcessing ? "Procesando..." : "Registrar depreciación"}
+                        </button>
+                    )}
                 </div>
             </div>
 

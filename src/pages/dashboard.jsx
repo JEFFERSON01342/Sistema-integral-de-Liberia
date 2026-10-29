@@ -15,17 +15,16 @@ import { useSettings } from "../contexts/settingscontext";
 import Avatar from "../components/avatar";
 
 // Navegación agrupada por secciones. Cada enlace declara qué roles pueden verlo.
-// Roles del sistema: superadmin (ve TODO), admin, gerente, cajero, despacho.
-// (Se mantiene "vendedor" por compatibilidad con datos existentes → equiparado a admin.)
+// Roles del sistema: superadmin, admin, gerente, contador, cajero y despacho.
 const navGroups = [
     {
         section: "Ventas y Atención",
         links: [
-            { to: "ventas",         label: 'Ventas',               icon: ShoppingCart, roles: ["admin", "vendedor", "gerente", "cajero"] },
-            { to: "pedidosWeb",     label: 'Pedidos Web',           icon: ShoppingBag,  roles: ["admin", "vendedor", "gerente", "despacho"] },
-            { to: "impresiones",    label: 'Impresiones',           icon: Printer,      roles: ["admin", "vendedor", "gerente"] },
-            { to: "clientes",       label: 'Clientes',              icon: UserCheck,    roles: ["admin", "vendedor", "gerente"] },
-            { to: "devoluciones",   label: 'Devoluciones',          icon: RotateCcw,    roles: ["admin", "vendedor", "gerente"] },
+            { to: "ventas",         label: 'Ventas',               icon: ShoppingCart, roles: ["admin", "gerente", "cajero"] },
+            { to: "pedidosWeb",     label: 'Pedidos Web',           icon: ShoppingBag,  roles: ["admin", "gerente", "despacho"] },
+            { to: "impresiones",    label: 'Impresiones',           icon: Printer,      roles: ["admin", "gerente"] },
+            { to: "clientes",       label: 'Clientes',              icon: UserCheck,    roles: ["admin", "gerente"] },
+            { to: "devoluciones",   label: 'Devoluciones',          icon: RotateCcw,    roles: ["admin", "gerente"] },
             { to: "aperturaCierre", label: 'Apertura/Cierre Caja',  icon: DoorOpen,     roles: ["cajero", "admin", "gerente"] },
             { to: "asignacionCajas", label: 'Asignación de Cajas',  icon: Monitor,      roles: ["admin", "gerente"] },
         ],
@@ -33,52 +32,52 @@ const navGroups = [
     {
         section: "Inventario",
         links: [
-            { to: "inventario",     label: 'Inventario',     icon: Package,        roles: ["admin", "vendedor", "gerente"] },
-            { to: "bodega",         label: 'Bodega',          icon: Warehouse,      roles: ["admin", "gerente"] },
-            { to: "proveedores",    label: 'Proveedores',    icon: Users,          roles: ["admin", "vendedor", "gerente"] },
-            { to: "transferencias", label: 'Transferencias', icon: ArrowLeftRight, roles: ["admin", "vendedor", "gerente"] },
+            { to: "inventario",     label: 'Inventario',     icon: Package,        roles: ["admin", "gerente"] },
+            { to: "bodega",         label: 'Bodega',          icon: Warehouse,      roles: ["admin", "gerente", "bodega"] },
+            { to: "proveedores",    label: 'Proveedores',    icon: Users,          roles: ["admin", "gerente"] },
+            { to: "transferencias", label: 'Transferencias', icon: ArrowLeftRight, roles: ["admin", "gerente"] },
             { to: "sucursales",     label: 'Sucursales',     icon: Building2,      roles: [] }, // solo superadmin (no se crean sucursales desde admin)
         ],
     },
     {
         section: "Finanzas",
         links: [
-            { to: "cajabancos",         label: 'Cajas/Bancos',       icon: Wallet,              roles: ["admin", "vendedor", "gerente"] },
-            { to: "activosFijos",       label: 'Activos Fijos',      icon: Wrench,              roles: ["admin", "vendedor", "gerente"] },
-            { to: "gastosFijos",        label: 'Gastos Fijos',       icon: Lightbulb,           roles: ["admin", "vendedor", "gerente"] },
-            { to: "estadosFinancieros", label: 'Estados Financieros', icon: FileSpreadsheetIcon, roles: ["admin", "vendedor", "gerente"] },
-            { to: "analisis",           label: 'Análisis',           icon: ChartColumn,         roles: ["admin", "vendedor", "gerente"] },
-            { to: "proyecciones",       label: 'Proyecciones',       icon: TrendingUp,          roles: ["admin", "vendedor", "gerente"] },
+            { to: "cajabancos",         label: 'Cajas/Bancos',       icon: Wallet,              roles: ["admin"] },
+            { to: "activosFijos",       label: 'Activos Fijos',      icon: Wrench,              roles: ["admin"] },
+            { to: "gastosFijos",        label: 'Gastos Fijos',       icon: Lightbulb,           roles: ["admin"] },
+            { to: "estadosFinancieros", label: 'Estados Financieros', icon: FileSpreadsheetIcon, roles: ["admin", "contador"] },
+            { to: "analisis",           label: 'Análisis',           icon: ChartColumn,         roles: ["admin"] },
+            { to: "proyecciones",       label: 'Proyecciones',       icon: TrendingUp,          roles: ["admin"] },
         ],
     },
     {
         section: "Contabilidad",
         links: [
-            { to: "planCuentas",          label: 'Plan de Cuentas',       icon: ListTree,          roles: ["admin", "gerente", "vendedor"] },
-            { to: "comprobantes",         label: 'Libro Diario',          icon: BookText,          roles: ["admin", "gerente", "vendedor"] },
-            { to: "libroMayor",           label: 'Libro Mayor',           icon: BookOpen,          roles: ["admin", "gerente", "vendedor"] },
-            { to: "antiguedadSaldos",     label: 'Antigüedad de Saldos',  icon: Clock,             roles: ["admin", "gerente", "vendedor"] },
-            { to: "conciliacionBancaria", label: 'Conciliación Bancaria', icon: Scale,             roles: ["admin", "gerente"] },
-            { to: "periodosContables",    label: 'Períodos Contables',    icon: CalendarClock,     roles: ["admin", "gerente"] },
-            { to: "configContable",       label: 'Config. Contable',      icon: SlidersHorizontal, roles: ["admin", "gerente"] },
+            { to: "planCuentas",          label: 'Plan de Cuentas',       icon: ListTree,          roles: ["admin", "contador"] },
+            { to: "comprobantes",         label: 'Libro Diario',          icon: BookText,          roles: ["admin", "contador"] },
+            { to: "libroMayor",           label: 'Libro Mayor',           icon: BookOpen,          roles: ["admin", "contador"] },
+            { to: "antiguedadSaldos",     label: 'Antigüedad de Saldos',  icon: Clock,             roles: ["admin"] },
+            { to: "conciliacionBancaria", label: 'Conciliación Bancaria', icon: Scale,             roles: ["admin"] },
+            { to: "periodosContables",    label: 'Períodos Contables',    icon: CalendarClock,     roles: ["admin"] },
+            { to: "configContable",       label: 'Config. Contable',      icon: SlidersHorizontal, roles: ["admin"] },
         ],
     },
     {
         section: "Recursos Humanos",
         links: [
-            { to: "recursosHumanos", label: 'Recursos Humanos', icon: HardHat, roles: ["admin", "vendedor", "gerente"] },
+            { to: "recursosHumanos", label: 'Recursos Humanos', icon: HardHat, roles: ["admin"] },
         ],
     },
     {
         section: "Marketing",
         links: [
-            { to: "marketing", label: 'Marketing', icon: Megaphone, roles: ["admin", "vendedor", "gerente"] },
+            { to: "marketing", label: 'Marketing', icon: Megaphone, roles: ["admin"] },
         ],
     },
     {
         section: "Reportes",
         links: [
-            { to: "reportes", label: 'Reportes y Análisis', icon: BarChart3, roles: ["admin", "vendedor", "gerente"] },
+            { to: "reportes", label: 'Reportes y Análisis', icon: BarChart3, roles: ["admin", "gerente"] },
         ],
     },
     {
@@ -86,20 +85,20 @@ const navGroups = [
         links: [
             { to: "vistaSucursales", label: 'Vista de Sucursales', icon: Globe,      roles: [] }, // solo superadmin
             { to: "terminalesPOS",   label: 'Terminales POS',      icon: Monitor,    roles: [] }, // solo superadmin
-            { to: "usuarios",        label: 'Usuarios y Permisos', icon: Users,      roles: [] }, // solo superadmin
+            { to: "usuarios",        label: 'Usuarios y Permisos', icon: Users,      roles: ["admin"] },
             { to: "auditoria",       label: 'Auditoría',           icon: ScrollText, roles: [] }, // solo superadmin
         ],
     },
     {
         section: "Soporte",
         links: [
-            { to: "ticketsIT", label: 'Tickets IT', icon: LifeBuoy, roles: ["admin", "vendedor", "gerente", "cajero", "despacho"] },
+            { to: "ticketsIT", label: 'Tickets IT', icon: LifeBuoy, roles: ["admin", "gerente", "cajero"] },
         ],
     },
     {
         section: "Cuenta",
         links: [
-            { to: "configuracion", label: 'Configuración', icon: Settings, roles: ["admin", "vendedor", "gerente", "cajero", "despacho"] },
+            { to: "configuracion", label: 'Configuración', icon: Settings, roles: ["admin", "gerente", "cajero", "despacho"] },
         ],
     },
 ];
@@ -120,9 +119,10 @@ const ROL_LABEL = {
     superadmin: "Super Administrador",
     admin: "Administrador",
     gerente: "Gerente",
+    contador: "Contador",
+    bodega: "Supervisor de Bodega",
     cajero: "Cajero",
     despacho: "Despacho",
-    vendedor: "Vendedor",
 };
 
 // Filtra un grupo de enlaces según el rol.

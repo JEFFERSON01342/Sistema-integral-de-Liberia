@@ -11,6 +11,7 @@ import StatsCards from "../components/statscards";
 import Tabs from "../components/tabs";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
+import { useAuth } from "../contexts/authcontext";
 import { useProductos } from "../hooks/useProductos";
 import { useClientes } from "../hooks/useClientes";
 import ExcelJS from "exceljs";
@@ -34,6 +35,7 @@ const fmtK = (v) => {
 
 export default function Reportes() {
     const { empresaId } = useEmpresa();
+    const { perfil, rol } = useAuth();
     const { productos = [] } = useProductos();
     const { clientes = [] } = useClientes();
 
@@ -55,6 +57,10 @@ export default function Reportes() {
 
     const cargar = useCallback(async () => {
         if (!empresaId) return;
+        if (rol !== "superadmin" && !perfil?.id_sucursal) {
+            toast.error("El perfil no tiene una sucursal asignada.");
+            return;
+        }
         setLoading(true);
         try {
             const cargarPaginas = async (crearConsulta) => {
@@ -67,21 +73,21 @@ export default function Reportes() {
                 }
                 return filas;
             };
-            const [v, dev, cxc] = await Promise.all([
-                cargarPaginas(() => supabase.from("ventas")
-                    .select("id_venta, numero, fecha_operativa, metodo_pago, total, costo_total_fifo")
-                    .eq("id_empresa", empresaId)
-                    .order("fecha_operativa")
-                    .order("id_venta")),
-                cargarPaginas(() => supabase.from("devoluciones_venta")
-                    .select("id_devolucion, numero, id_venta, fecha_operativa, metodo_reembolso, total")
-                    .eq("id_empresa", empresaId)
-                    .order("fecha_operativa")
-                    .order("id_devolucion")),
-                cargarPaginas(() => supabase.from("saldos_cuentas_por_cobrar")
-                    .select("saldo_pendiente")
-                    .eq("id_empresa", empresaId)
-                    .gt("saldo_pendiente", 0)),
+            const [v, dev] = await Promise.all([
+                cargarPaginas(() => {
+                    let query = supabase.from("ventas")
+                        .select("id_venta, numero, fecha_operativa, metodo_pago, total, costo_total_fifo")
+                        .eq("id_empresa", empresaId);
+                    if (rol !== "superadmin") query = query.eq("id_sucursal", perfil.id_sucursal);
+                    return query.order("fecha_operativa").order("id_venta");
+                }),
+                cargarPaginas(() => {
+                    let query = supabase.from("devoluciones_venta")
+                        .select("id_devolucion, numero, id_venta, fecha_operativa, metodo_reembolso, total")
+                        .eq("id_empresa", empresaId);
+                    if (rol !== "superadmin") query = query.eq("id_sucursal", perfil.id_sucursal);
+                    return query.order("fecha_operativa").order("id_devolucion");
+                }),
             ]);
             const idsVenta = v.map((venta) => venta.id_venta);
             const idsDevolucion = dev.map((devolucion) => devolucion.id_devolucion);
@@ -97,6 +103,14 @@ export default function Reportes() {
                 }
                 return filas;
             };
+            const cxc = idsVenta.length
+                ? await consultarPorLotes(
+                    "saldos_cuentas_por_cobrar",
+                    "saldo_pendiente",
+                    "id_venta",
+                    idsVenta,
+                )
+                : [];
             const [d, dd] = await Promise.all([
                 consultarPorLotes("detalle_ventas", "id_venta, id_producto, cantidad, precio_unitario, subtotal_linea", "id_venta", idsVenta),
                 consultarPorLotes("detalles_devolucion_venta", "id_devolucion, id_producto, cantidad, subtotal", "id_devolucion", idsDevolucion),
@@ -112,7 +126,7 @@ export default function Reportes() {
         } finally {
             setLoading(false);
         }
-    }, [empresaId]);
+    }, [empresaId, perfil?.id_sucursal, rol]);
 
     useEffect(() => { cargar(); }, [cargar]);
 

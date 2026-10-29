@@ -20,7 +20,7 @@ const ORIGENES_PRESTAMO = ["PRESTAMO", "PAGO_PRESTAMO"];
 export default function Comprobantes() {
     const { empresaId } = useEmpresa();
     const { rol, perfil } = useAuth();
-    const puedeGestionar = ["superadmin", "admin", "gerente"].includes(rol);
+    const puedeGestionar = ["superadmin", "admin", "contador"].includes(rol);
 
     const [lista, setLista] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -225,13 +225,15 @@ export default function Comprobantes() {
                                 <td className="py-2.5">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <button onClick={() => verDetalle(c)} className="btn-secondary text-xs"><Eye size={14} /> Ver</button>
-                                        {c.estado === "BORRADOR" && puedeGestionar && (
+                                        {c.estado === "BORRADOR" && puedeGestionar
+                                            && (rol !== "contador" || (c.tipo === "MANUAL" && !c.origen_tipo && !c.origen_id)) && (
                                             <>
                                                 <button onClick={() => contabilizar(c)} className="btn-secondary text-xs"><CheckCircle2 size={14} /> Contabilizar</button>
                                                 <button onClick={() => cancelarBorrador(c)} className="btn-secondary text-xs text-red-400"><X size={14} /> Cancelar</button>
                                             </>
                                         )}
                                         {c.estado === "CONTABILIZADO" && puedeGestionar
+                                            && (rol !== "contador" || (c.tipo === "MANUAL" && !c.origen_tipo && !c.origen_id))
                                             && c.tipo !== "REVERSION" && !c.reverso_de_id && !c.revertido_por_id && (
                                             !ORIGENES_PRESTAMO.includes(c.origen_tipo)
                                                 ? <button onClick={() => revertir(c)} className="btn-secondary text-xs"><RotateCcw size={14} /> Revertir</button>

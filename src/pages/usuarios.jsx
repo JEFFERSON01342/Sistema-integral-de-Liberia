@@ -8,9 +8,10 @@ import { toast } from "react-hot-toast";
 const SUPERADMIN_ROLES = [
   { value: "admin", label: "Administrador de sucursal" },
   { value: "gerente", label: "Gerente" },
+  { value: "contador", label: "Contador" },
+  { value: "bodega", label: "Supervisor de Bodega" },
   { value: "cajero", label: "Cajero" },
   { value: "despacho", label: "Despacho" },
-  { value: "vendedor", label: "Vendedor" },
 ];
 
 const ADMIN_ROLES = SUPERADMIN_ROLES.filter(({ value }) => value !== "admin");
@@ -19,9 +20,10 @@ const ROL_LABEL = {
   superadmin: "Super Administrador",
   admin: "Administrador de sucursal",
   gerente: "Gerente",
+  contador: "Contador",
+  bodega: "Supervisor de Bodega",
   cajero: "Cajero",
   despacho: "Despacho",
-  vendedor: "Vendedor",
 };
 
 const EMPTY_FORM = { email: "", rol: "cajero", id_sucursal: "" };

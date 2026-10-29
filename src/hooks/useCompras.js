@@ -2,9 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "react-hot-toast";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
+import { useAuth } from "../contexts/authcontext";
 
 export function useCompras() {
     const { empresaId } = useEmpresa();
+    const { perfil, rol } = useAuth();
+    const esBodega = rol === "bodega";
     const [ordenes, setOrdenes] = useState([]);
     const [cuentasPorPagar, setCuentasPorPagar] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -18,12 +21,24 @@ export function useCompras() {
         }
         setIsLoading(true);
         try {
-            const [ordenesResult, detallesResult, proveedoresResult, productosResult, cuentasResult] = await Promise.all([
-                supabase
+            const ordenesQuery = supabase
                     .from("ordenes_compra")
                     .select("id_orden_compra, numero, id_sucursal, id_proveedor, estado, observaciones, creada_en")
                     .eq("id_empresa", empresaId)
-                    .order("creada_en", { ascending: false }),
+                    .order("creada_en", { ascending: false });
+            if (esBodega && perfil?.id_sucursal) {
+                ordenesQuery.eq("id_sucursal", perfil.id_sucursal);
+            }
+            const cuentasQuery = esBodega
+                ? Promise.resolve({ data: [], error: null })
+                : supabase
+                    .from("saldos_cuentas_por_pagar")
+                    .select("id_cuenta_por_pagar, id_proveedor, id_recepcion, id_sucursal, fecha_emision, fecha_vencimiento, total, monto_pagado, saldo_pendiente, dias_vencidos, estado")
+                    .eq("id_empresa", empresaId)
+                    .gt("saldo_pendiente", 0)
+                    .order("fecha_vencimiento");
+            const [ordenesResult, detallesResult, proveedoresResult, productosResult, cuentasResult] = await Promise.all([
+                ordenesQuery,
                 supabase
                     .from("detalles_orden_compra")
                     .select("id_orden_compra, id_detalle_orden, id_producto, cantidad_solicitada, cantidad_aceptada_acumulada, cantidad_rechazada_acumulada")
@@ -36,12 +51,7 @@ export function useCompras() {
                     .from("productos")
                     .select("id_producto, nombre")
                     .eq("id_empresa", empresaId),
-                supabase
-                    .from("saldos_cuentas_por_pagar")
-                    .select("id_cuenta_por_pagar, id_proveedor, id_recepcion, id_sucursal, fecha_emision, fecha_vencimiento, total, monto_pagado, saldo_pendiente, dias_vencidos, estado")
-                    .eq("id_empresa", empresaId)
-                    .gt("saldo_pendiente", 0)
-                    .order("fecha_vencimiento"),
+                cuentasQuery,
             ]);
             for (const result of [ordenesResult, detallesResult, proveedoresResult, productosResult, cuentasResult]) {
                 if (result.error) throw result.error;
@@ -83,7 +93,7 @@ export function useCompras() {
         } finally {
             setIsLoading(false);
         }
-    }, [empresaId]);
+    }, [empresaId, esBodega, perfil?.id_sucursal]);
 
     useEffect(() => {
         fetchCompras();

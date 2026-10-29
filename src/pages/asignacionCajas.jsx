@@ -20,7 +20,7 @@ export default function AsignacionCajas() {
   const [terminales, setTerminales] = useState([]);
   const [asignaciones, setAsignaciones] = useState([]); // activas de la sucursal
   const [cajasAbiertas, setCajasAbiertas] = useState([]); // apertura_caja abiertas
-  const [empleados, setEmpleados] = useState([]); // cajeros/vendedores activos de la sucursal
+  const [empleados, setEmpleados] = useState([]); // cajeros activos de la sucursal
 
   // Modal de asignación
   const [modal, setModal] = useState(false);
@@ -55,7 +55,7 @@ export default function AsignacionCajas() {
         .eq("id_empresa", EMPRESA_ID).eq("id_sucursal", sucursalSel).eq("estado", "abierta"),
       supabase.from("perfiles").select("id, nombre_completo, rol")
         .eq("id_empresa", EMPRESA_ID).eq("id_sucursal", sucursalSel)
-        .in("rol", ["cajero", "vendedor"]).eq("activo", true).order("nombre_completo"),
+        .eq("rol", "cajero").eq("activo", true).order("nombre_completo"),
     ]);
 
     // Nombres de empleados (incluye los asignados aunque no estén en la lista filtrada)
@@ -263,7 +263,7 @@ export default function AsignacionCajas() {
                   {empleados.map((p) => <option key={p.id} value={p.id}>{p.nombre_completo} ({p.rol})</option>)}
                 </select>
                 {empleados.length === 0 && (
-                  <span className="text-xs text-amber-400">No hay cajeros ni vendedores activos en esta sucursal.</span>
+                  <span className="text-xs text-amber-400">No hay cajeros activos en esta sucursal.</span>
                 )}
               </div>
               <div className="flex flex-col gap-2">

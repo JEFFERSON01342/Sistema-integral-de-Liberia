@@ -12,7 +12,7 @@ import Avatar, { AVATARES_PRESET, AVATAR_DEFAULT } from "../components/avatar";
 
 const ROL_LABEL = {
     superadmin: "Super Administrador", admin: "Administrador", gerente: "Gerente",
-    cajero: "Cajero", despacho: "Despacho", vendedor: "Vendedor",
+    contador: "Contador", cajero: "Cajero", despacho: "Despacho",
 };
 
 const Switch = ({ on, onChange }) => (

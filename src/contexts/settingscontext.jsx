@@ -73,7 +73,7 @@ const DICT = {
         "La imagen no debe superar 2 MB": "Image must not exceed 2 MB", "No se pudo subir la foto": "Could not upload photo",
         "El nombre es obligatorio": "Name is required", "Perfil actualizado": "Profile updated", "Subiendo...": "Uploading...",
         "Super Administrador": "Super Administrator", "Administrador": "Administrator", "Gerente": "Manager",
-        "Cajero": "Cashier", "Despacho": "Dispatch", "Vendedor": "Seller",
+        "Contador": "Accountant", "Cajero": "Cashier", "Despacho": "Dispatch",
         "El idioma se aplica al menú, la barra superior y la configuración.": "Language applies to the menu, top bar and settings.",
         "Córdoba nicaragüense": "Nicaraguan córdoba", "Configuración restablecida": "Settings restored",
         "Mi cuenta": "My account",

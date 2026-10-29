@@ -2,14 +2,21 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "react-hot-toast";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
+import { useAuth } from "../contexts/authcontext";
 
 export function useProductos() {
     const [productos, setProductos] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const { empresaId } = useEmpresa();
+    const { perfil, rol } = useAuth();
 
     const fetchProductos = useCallback(async () => {
+        if (rol !== "superadmin" && !perfil?.id_sucursal) {
+            setProductos([]);
+            setError("El perfil no tiene una sucursal asignada.");
+            return;
+        }
         if (!empresaId) {
             setProductos([]);
             return;
@@ -17,6 +24,13 @@ export function useProductos() {
         setIsLoading(true);
         setError(null);
         try {
+            let existenciasQuery = supabase
+                .from("existencias_producto_sucursal")
+                .select("id_producto, id_sucursal, cantidad_disponible, stock_minimo, valor_inventario, estado_stock")
+                .eq("id_empresa", empresaId);
+            if (rol !== "superadmin") {
+                existenciasQuery = existenciasQuery.eq("id_sucursal", perfil.id_sucursal);
+            }
             const [productosResult, existenciasResult] = await Promise.all([
                 supabase
                     .from("productos")
@@ -24,10 +38,7 @@ export function useProductos() {
                     .eq("id_empresa", empresaId)
                     .eq("activo", true)
                     .order("nombre", { ascending: true }),
-                supabase
-                    .from("existencias_producto_sucursal")
-                    .select("id_producto, id_sucursal, cantidad_disponible, stock_minimo, valor_inventario, estado_stock")
-                    .eq("id_empresa", empresaId),
+                existenciasQuery,
             ]);
             if (productosResult.error) throw productosResult.error;
             if (existenciasResult.error) throw existenciasResult.error;
@@ -64,7 +75,7 @@ export function useProductos() {
         } finally {
             setIsLoading(false);
         }
-    }, [empresaId]);
+    }, [empresaId, perfil?.id_sucursal, rol]);
 
     useEffect(() => {
         fetchProductos();

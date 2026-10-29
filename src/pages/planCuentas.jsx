@@ -16,7 +16,7 @@ const SALDOS = ["DEBE", "HABER"];
 export default function PlanCuentas() {
     const { empresaId } = useEmpresa();
     const { rol } = useAuth();
-    const puedeEditar = ["superadmin", "admin", "gerente"].includes(rol);
+    const puedeEditar = ["superadmin", "admin", "contador"].includes(rol);
 
     const [cuentas, setCuentas] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
