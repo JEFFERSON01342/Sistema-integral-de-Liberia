@@ -1,12 +1,12 @@
 import {
-    LogOut, HardHat, ShoppingCart, UserCheck, Package,
+    LogOut, HardHat, ShoppingCart, UserCheck, Package, Warehouse,
     Users, Wallet, Wrench, FileSpreadsheetIcon, ChartColumn, TrendingUp,
     Sun, Moon, Lightbulb, Menu, X, ShoppingBag, Printer,
     Building2, Monitor, DoorOpen, RotateCcw, ScrollText, ArrowLeftRight,
     Megaphone, BarChart3, Settings, LifeBuoy, Globe,
     ListTree, BookText, BookOpen, Clock, Scale, CalendarClock, SlidersHorizontal
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { createElement, useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/authcontext";
 import { useTheme } from "../contexts/themecontext";
@@ -34,6 +34,7 @@ const navGroups = [
         section: "Inventario",
         links: [
             { to: "inventario",     label: 'Inventario',     icon: Package,        roles: ["admin", "vendedor", "gerente"] },
+            { to: "bodega",         label: 'Bodega',          icon: Warehouse,      roles: ["admin", "gerente"] },
             { to: "proveedores",    label: 'Proveedores',    icon: Users,          roles: ["admin", "vendedor", "gerente"] },
             { to: "transferencias", label: 'Transferencias', icon: ArrowLeftRight, roles: ["admin", "vendedor", "gerente"] },
             { to: "sucursales",     label: 'Sucursales',     icon: Building2,      roles: [] }, // solo superadmin (no se crean sucursales desde admin)
@@ -104,13 +105,13 @@ const navGroups = [
 ];
 
 // Componente de enlace reutilizable (estilo sidebar corporativo).
-const AppLink = ({ to, icon: Icon, label, onClick, t = (x) => x }) => (
+const AppLink = ({ to, icon, label, onClick, t = (x) => x }) => (
     <NavLink
         to={to}
         onClick={onClick}
         className={({ isActive }) => `erp-navlink ${isActive ? "active" : ""}`}
     >
-        <Icon size={18} className="shrink-0" />
+        {createElement(icon, { size: 18, className: "shrink-0" })}
         <span className="truncate">{t(label)}</span>
     </NavLink>
 );

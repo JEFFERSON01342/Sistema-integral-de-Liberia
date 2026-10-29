@@ -7,6 +7,7 @@ import PedidosWeb from '../pages/pedidosWeb';
 import Impresiones from '../pages/impresiones';
 import Clientes from '../pages/clientes';
 import Inventario from '../pages/inventario';
+import Bodega from '../pages/bodega';
 import Proveedores from '../pages/proveedores';
 import CajasBancos from '../pages/cajasbancos';
 import ActivosFijos from '../pages/activosfijos';
@@ -71,6 +72,7 @@ const router = createBrowserRouter([
                   { path: 'impresiones', element: <Impresiones /> },
                   { path: 'clientes', element: <Clientes /> },
                   { path: 'inventario', element: <Inventario /> },
+                  { path: 'bodega', element: <Bodega /> },
                   { path: 'proveedores', element: <Proveedores /> },
                   { path: 'cajabancos', element: <CajasBancos /> },
                   { path: 'activosFijos', element: <ActivosFijos /> },

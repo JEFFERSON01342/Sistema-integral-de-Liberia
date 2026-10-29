@@ -14,6 +14,7 @@ export const ROUTE_ROLES = {
 
   // Inventario
   inventario:        ["admin", "gerente", "vendedor"],
+  bodega:            ["admin", "gerente"],
   proveedores:       ["admin", "gerente", "vendedor"],
   transferencias:    ["admin", "gerente"],
 

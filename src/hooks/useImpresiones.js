@@ -59,12 +59,58 @@ export function useImpresiones() {
         .update({ estado: nuevoEstado })
         .eq("id_trabajo", idTrabajo);
       if (error) throw error;
+
+      if (nuevoEstado === "Entregado") {
+        return eliminarArchivoTrabajo(idTrabajo);
+      }
+
       await fetchTrabajos();
-      return true;
+      return { success: true };
     } catch (err) {
       console.error("Error actualizando trabajo:", err.message);
       setError(err.message);
-      return false;
+      return { success: false, error: err.message };
+    }
+  };
+
+  const eliminarArchivoTrabajo = async (idTrabajo) => {
+    try {
+      const { data: trabajo, error: consultaError } = await supabase
+        .from("trabajos_impresion")
+        .select("estado,storage_path")
+        .eq("id_trabajo", idTrabajo)
+        .maybeSingle();
+      if (consultaError) throw consultaError;
+      if (trabajo && trabajo.estado !== "Entregado") {
+        throw new Error("Solo se eliminan archivos de trabajos ya entregados.");
+      }
+      if (!trabajo?.storage_path) {
+        await fetchTrabajos();
+        return { success: true, fileDeleted: true };
+      }
+      if (!trabajo.storage_path.startsWith("prints/")) {
+        throw new Error("La ruta del archivo no pertenece al directorio autorizado de impresiones.");
+      }
+
+      const { error: storageError } = await supabase.storage
+        .from(BUCKET)
+        .remove([trabajo.storage_path]);
+      if (storageError) throw storageError;
+
+      const { error: actualizarError } = await supabase
+        .from("trabajos_impresion")
+        .update({ storage_path: null })
+        .eq("id_trabajo", idTrabajo);
+      if (actualizarError) throw actualizarError;
+
+      setError(null);
+      await fetchTrabajos();
+      return { success: true, fileDeleted: true };
+    } catch (err) {
+      console.error("Error eliminando archivo de impresión:", err.message);
+      setError(err.message);
+      await fetchTrabajos();
+      return { success: false, fileDeleted: false, error: err.message };
     }
   };
 
@@ -109,5 +155,14 @@ export function useImpresiones() {
     }
   };
 
-  return { trabajos, isLoading, error, fetchTrabajos, getDownloadUrl, cambiarEstado, cobrarImpresion };
+  return {
+    trabajos,
+    isLoading,
+    error,
+    fetchTrabajos,
+    getDownloadUrl,
+    cambiarEstado,
+    eliminarArchivoTrabajo,
+    cobrarImpresion,
+  };
 }

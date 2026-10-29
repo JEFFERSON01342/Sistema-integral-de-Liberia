@@ -1,11 +1,12 @@
-import { Plus, Save } from 'lucide-react';
+import { Plus, Printer, Save } from 'lucide-react';
 import NuevaCategoria from "../components/nuevaCategoria";
 import { useCategorias } from '../hooks/useCategorias';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUnidadesMedidas } from '../hooks/useUnidadesMedidas';
 import { toast } from "react-hot-toast";
 import { supabase } from '../supabase/supabaseclient';
 import { useEmpresa } from '../contexts/empresacontext';
+import { dibujarCodigoBarras, imprimirCodigosBarras } from '../utils/generarCodigoBarras';
 
 export default function NuevoProducto({ onClose, onProductoAgregado }) {
     const { categorias, agregarCategoria } = useCategorias();
@@ -19,6 +20,15 @@ export default function NuevoProducto({ onClose, onProductoAgregado }) {
     const [imagenFile, setImagenFile] = useState(null);
     const [imagenPreview, setImagenPreview] = useState(null);
     const [subiendoImagen, setSubiendoImagen] = useState(false);
+    const [guardando, setGuardando] = useState(false);
+    const [productoCreado, setProductoCreado] = useState(null);
+    const codigoBarrasRef = useRef(null);
+
+    useEffect(() => {
+        if (productoCreado && codigoBarrasRef.current) {
+            dibujarCodigoBarras(codigoBarrasRef.current, productoCreado.codigo_barras);
+        }
+    }, [productoCreado]);
 
     const handleImagenChange = (e) => {
         const file = e.target.files?.[0];
@@ -115,17 +125,25 @@ export default function NuevoProducto({ onClose, onProductoAgregado }) {
             precio_venta: Number(formData.get("precio-unitario")),
             id_unidad_medida: parseInt(unidadMedidaId) || null, 
             activo: true,
+            codigo_barras: String(formData.get("codigo-barras") || "").trim() || codigoSku,
             imagen_principal: imagenUrl,
         };
 
+        setGuardando(true);
         const result = await onProductoAgregado(nuevoProducto);
+        setGuardando(false);
 
         if (result.success) {
-            toast.success(`✅ Producto agregado correctamente (SKU: ${codigoSku})`);
-            onClose();
+            const guardado = result.data || {};
+            setProductoCreado({
+                nombre: guardado.nombre || nombre,
+                sku: guardado.sku || codigoSku,
+                codigo_barras: guardado.codigo_barras || nuevoProducto.codigo_barras,
+                precio_venta: Number(guardado.precio_venta || nuevoProducto.precio_venta),
+            });
+            toast.success(`Producto agregado correctamente (SKU: ${codigoSku}).`);
         } else {
-            // 'errorPr' no está definido, lo quité.
-            toast.error(`⚠️ ${result.message || "Error al agregar producto"}`);
+            toast.error(result.message || "No se pudo agregar el producto.");
         }
     };
 
@@ -137,7 +155,27 @@ export default function NuevoProducto({ onClose, onProductoAgregado }) {
                     <h3 className="text-2xl font-semibold">Nuevo Producto</h3>
                 </div>
 
-                <form onSubmit={handleSubmit}>
+                {productoCreado ? (
+                    <div className="space-y-5">
+                        <div className="rounded-xl border border-secondary bg-input p-5 text-center space-y-3">
+                            <h4 className="text-xl font-semibold">Producto creado</h4>
+                            <p>{productoCreado.nombre}</p>
+                            <p className="text-sm text-subtitle">SKU: {productoCreado.sku}</p>
+                            <svg ref={codigoBarrasRef} className="mx-auto max-w-full" role="img" aria-label={`Código de barras ${productoCreado.codigo_barras}`} />
+                            <p className="font-mono">{productoCreado.codigo_barras}</p>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button type="button" onClick={() => imprimirCodigosBarras([{
+                                codigo: productoCreado.codigo_barras,
+                                nombre: productoCreado.nombre,
+                                precio: productoCreado.precio_venta,
+                            }])} className="btn-secondary inline-flex items-center gap-2">
+                                <Printer size={18} /> Imprimir etiqueta
+                            </button>
+                            <button type="button" onClick={onClose} className="btn-primary">Listo</button>
+                        </div>
+                    </div>
+                ) : <form onSubmit={handleSubmit}>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
                         
                         {/* --- Campos de Producto (iguales) --- */}
@@ -166,6 +204,10 @@ export default function NuevoProducto({ onClose, onProductoAgregado }) {
                         <div className="flex flex-col gap-2">
                             <label htmlFor="precio-unitario" className="text-sm font-medium text-title">Precio Unitario</label>
                             <input id="precio-unitario" name="precio-unitario" type="number" min="0.01" step="0.01" required className="bg-input border border-secondary rounded-lg p-3" />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <label htmlFor="codigo-barras" className="text-sm font-medium text-title">Código de barras</label>
+                            <input id="codigo-barras" name="codigo-barras" type="text" maxLength="80" placeholder="Opcional; vacío usa el SKU" className="bg-input border border-secondary rounded-lg p-3" />
                         </div>
                         <div className="flex flex-col gap-2">
                             <label htmlFor="unidadmedida" className="text-sm font-medium text-title">Unidad de Medida</label>
@@ -197,12 +239,12 @@ export default function NuevoProducto({ onClose, onProductoAgregado }) {
                         <button type="button" onClick={onClose} className="bg-secondary text-button-text cursor-pointer border border-secondary py-2 px-6 rounded-lg hover:bg-secondary transition-transform hover:scale-110">
                             Cancelar
                         </button>
-                        <button type="submit" disabled={subiendoImagen} className="bg-button text-button py-2 cursor-pointer px-4 rounded-lg hover:bg-[#E8E8E8] transition-transform hover:scale-110 flex items-center gap-2 disabled:opacity-60">
+                        <button type="submit" disabled={subiendoImagen || guardando} className="bg-button text-button py-2 cursor-pointer px-4 rounded-lg hover:bg-[#E8E8E8] transition-transform hover:scale-110 flex items-center gap-2 disabled:opacity-60">
                             <span className="icon"><Save /></span>
-                            {subiendoImagen ? 'Subiendo imagen...' : 'Guardar'}
+                            {subiendoImagen ? 'Subiendo imagen...' : guardando ? 'Guardando...' : 'Guardar'}
                         </button>
                     </div>
-                </form>
+                </form>}
                 </div>
             </div>
 

@@ -1,15 +1,14 @@
-import { Plus, Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Save } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from "react-hot-toast"
 import { useClientes } from "../hooks/useClientes"
 
 export default function NuevoCliente({ onClose }) {
-    const { clientes, addCliente } = useClientes();
+    const { addCliente } = useClientes();
     const [nombre, setNombre] = useState('');
     const [razonSocial, setRazonSocial] = useState('');
     const [correoElectronico, setCorreoElectronico] = useState('');
     const [telefono, setTelefono] = useState('');
-    const [direccion, setDireccion] = useState('');
     const [limiteCredito, setLimiteCredito] = useState('');
 
     const handleSubmit = async (e) => {
@@ -19,7 +18,6 @@ export default function NuevoCliente({ onClose }) {
             identificacion: razonSocial,
             correo: correoElectronico,
             telefono,
-            direccion,
             limite_credito: limiteCredito
         });
 
@@ -52,11 +50,6 @@ export default function NuevoCliente({ onClose }) {
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium text-title">Correo Electronico</label>
                             <input type="email" value={correoElectronico} onChange={e => setCorreoElectronico(e.target.value)} placeholder="ej: example@gmail.com" className="bg-input border border-secondary rounded-lg p-3" />
-                        </div>
-
-                        <div className="md:col-span-3 flex flex-col gap-2">
-                            <label className="text-sm font-medium text-title">Direccion</label>
-                            <input type="text" value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Direccion del cliente (opcional)" className="bg-input border border-secondary rounded-lg p-3" />
                         </div>
 
                         <div className="flex flex-col gap-2">

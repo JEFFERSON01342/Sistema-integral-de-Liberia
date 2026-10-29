@@ -95,17 +95,19 @@ export function useProductos() {
                 descripcion: nuevoProducto.descripcion?.trim() || null,
                 precio_venta: precioVenta,
                 activo: nuevoProducto.activo ?? nuevoProducto.estado ?? true,
-                codigo_barras: nuevoProducto.codigo_barras || sku,
+                codigo_barras: nuevoProducto.codigo_barras?.trim() || sku,
                 imagen_principal: nuevoProducto.imagen_principal || null,
                 id_categoria: nuevoProducto.id_categoria ? Number(nuevoProducto.id_categoria) : null,
                 id_unidad_medida: nuevoProducto.id_unidad_medida ? Number(nuevoProducto.id_unidad_medida) : null,
             };
-            const { error: errorProducto } = await supabase
+            const { data: productoCreado, error: errorProducto } = await supabase
                 .from("productos")
-                .insert(productoParaInsertar);
+                .insert(productoParaInsertar)
+                .select("id_producto,sku,codigo_barras,nombre,precio_venta")
+                .single();
             if (errorProducto) throw errorProducto;
             await fetchProductos();
-            return { success: true };
+            return { success: true, data: productoCreado };
 
         } catch (err) {
             setError(err.message);
@@ -147,7 +149,9 @@ export function useProductos() {
                 descripcion: cambios.descripcion?.trim() || null,
                 precio_venta: precioVenta,
                 activo: cambios.activo ?? cambios.estado,
-                codigo_barras: cambios.codigo_barras || null,
+                codigo_barras: cambios.codigo_barras === undefined
+                    ? undefined
+                    : cambios.codigo_barras?.trim() || null,
                 imagen_principal: cambios.imagen_principal || null,
                 id_categoria: cambios.id_categoria ? Number(cambios.id_categoria) : null,
                 id_unidad_medida: cambios.id_unidad_medida ? Number(cambios.id_unidad_medida) : null,

@@ -1,5 +1,13 @@
 import JsBarcode from "jsbarcode";
 
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+}[character]));
+
 /**
  * Calcula el dígito verificador EAN-13 a partir de 12 dígitos.
  * @param {string} base12 - cadena de 12 dígitos
@@ -49,7 +57,7 @@ export function esEAN13Valido(codigo) {
 export function dibujarCodigoBarras(elemento, codigo, opciones = {}) {
     if (!elemento || !codigo) return false;
     try {
-        const formato = /^\d{13}$/.test(codigo) ? "EAN13" : "CODE128";
+        const formato = esEAN13Valido(codigo) ? "EAN13" : "CODE128";
         JsBarcode(elemento, codigo, {
             format: formato,
             lineColor: "#000000",
@@ -78,7 +86,7 @@ export function codigoBarrasDataURL(codigo, opciones = {}) {
     if (!codigo) return null;
     try {
         const canvas = document.createElement("canvas");
-        const formato = /^\d{13}$/.test(codigo) ? "EAN13" : "CODE128";
+        const formato = esEAN13Valido(codigo) ? "EAN13" : "CODE128";
         JsBarcode(canvas, codigo, {
             format: formato,
             lineColor: "#000000",
@@ -112,8 +120,8 @@ export function imprimirCodigosBarras(items = []) {
                 it.precio != null ? `<div class="precio">C$ ${Number(it.precio).toFixed(2)}</div>` : "";
             return `
                 <div class="etiqueta">
-                    <div class="nombre">${it.nombre || ""}</div>
-                    <img src="${dataUrl}" alt="${it.codigo}" />
+                    <div class="nombre">${escapeHtml(it.nombre || "")}</div>
+                    <img src="${dataUrl}" alt="${escapeHtml(it.codigo)}" />
                     ${precio}
                 </div>`;
         })

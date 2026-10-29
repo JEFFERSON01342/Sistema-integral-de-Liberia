@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Printer, Clock, CheckCircle2, DollarSign, Phone, Download, FileText, Palette } from "lucide-react";
+import { Printer, Clock, CheckCircle2, DollarSign, Phone, Download, FileText, Palette, Trash2 } from "lucide-react";
 import { format } from "date-fns/format";
 import Swal from "sweetalert2";
 import StatsCards from "../components/statscards";
@@ -18,7 +18,7 @@ const ESTADO_BADGE = {
 };
 
 export default function Impresiones() {
-  const { trabajos, isLoading, error, getDownloadUrl, cambiarEstado, cobrarImpresion } = useImpresiones();
+  const { trabajos, isLoading, error, getDownloadUrl, cambiarEstado, eliminarArchivoTrabajo, cobrarImpresion } = useImpresiones();
   const [activeTab, setActiveTab] = useState("activos");
   const [busqueda, setBusqueda] = useState("");
 
@@ -94,8 +94,29 @@ export default function Impresiones() {
   };
 
   const handleEntregar = async (trabajo) => {
-    await cambiarEstado(trabajo.id_trabajo, "Entregado");
-    Swal.fire({ title: "Entregado", icon: "success", timer: 1200, showConfirmButton: false });
+    const resultado = await cambiarEstado(trabajo.id_trabajo, "Entregado");
+    if (!resultado.success) {
+      Swal.fire({ title: "No se pudo completar", text: resultado.error || "No se pudo actualizar el trabajo.", icon: "error" });
+      return;
+    }
+    if (!resultado.fileDeleted) {
+      Swal.fire({
+        title: "Trabajo entregado; archivo pendiente de borrar",
+        text: `${resultado.error || "No se pudo eliminar el archivo."} Puedes reintentar desde el historial.`,
+        icon: "warning",
+      });
+      return;
+    }
+    Swal.fire({ title: "Entregado", text: "El archivo se eliminó del almacenamiento.", icon: "success", timer: 1800, showConfirmButton: false });
+  };
+
+  const handleEliminarArchivo = async (trabajo) => {
+    const resultado = await eliminarArchivoTrabajo(trabajo.id_trabajo);
+    if (!resultado.success) {
+      Swal.fire({ title: "No se pudo eliminar el archivo", text: resultado.error, icon: "error" });
+      return;
+    }
+    Swal.fire({ title: "Archivo eliminado", icon: "success", timer: 1200, showConfirmButton: false });
   };
 
   return (
@@ -156,9 +177,11 @@ export default function Impresiones() {
                   {t.notas && <p className="text-subtitle text-sm italic">Nota: {t.notas}</p>}
 
                   <div className="flex flex-wrap gap-2 justify-end">
-                    <button onClick={() => handleDescargar(t)} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer flex items-center gap-1">
-                      <Download size={14} /> Descargar archivo
-                    </button>
+                    {t.storage_path && (
+                      <button onClick={() => handleDescargar(t)} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer flex items-center gap-1">
+                        <Download size={14} /> Descargar archivo
+                      </button>
+                    )}
                     {t.estado === "Pendiente" && (
                       <>
                         <button onClick={() => handleRechazar(t)} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer">Rechazar</button>
@@ -167,6 +190,11 @@ export default function Impresiones() {
                     )}
                     {t.estado === "Listo" && (
                       <button onClick={() => handleEntregar(t)} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 cursor-pointer">Marcar entregado</button>
+                    )}
+                    {t.estado === "Entregado" && t.storage_path && (
+                      <button onClick={() => handleEliminarArchivo(t)} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 cursor-pointer flex items-center gap-1">
+                        <Trash2 size={14} /> Reintentar borrado
+                      </button>
                     )}
                   </div>
                 </div>

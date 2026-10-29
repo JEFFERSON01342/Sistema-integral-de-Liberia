@@ -1,8 +1,7 @@
 import StatsCards from "../components/statscards";
 import NuevaVenta from "../components/nuevaVenta";
 import { useState, useEffect } from "react";
-import { FileSpreadsheet, DollarSign, AlertTriangle, CheckCircle, Clock, Plus, DoorOpen, FileText, Eye, Ban, X } from "lucide-react";
-import Swal from "sweetalert2";
+import { FileSpreadsheet, DollarSign, AlertTriangle, CheckCircle, Plus, DoorOpen, FileText, Eye, RotateCcw, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useClientes } from "../hooks/useClientes";
 import { useVenta } from "../hooks/useVenta";
@@ -10,15 +9,15 @@ import { useAuth } from "../contexts/authcontext";
 import { supabase } from "../supabase/supabaseclient";
 import { generarFacturaPDF } from "../utils/generarFacturaPDF";
 import { toast } from "react-hot-toast";
-
-const EMPRESA_ID = 1;
+import { useEmpresa } from "../contexts/empresacontext";
 
 export default function Ventas() {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const { ventas, isLoading: isLoadingVentas, fetchVentas } = useVenta();
-    const { clientes, isLoading: isLoadingClientes } = useClientes();
+    const { clientes, loading: isLoadingClientes } = useClientes();
     const { user, rol } = useAuth();
+    const { empresaId } = useEmpresa();
     const navigate = useNavigate();
 
     // Filtro por estado contable y modal "Ver asiento"
@@ -38,30 +37,23 @@ export default function Ventas() {
             return;
         }
         const { data, error } = await supabase
-            .from("lineas_comprobante")
-            .select("id, codigo, cuenta, debe, haber, descripcion")
-            .eq("comprobante_id", venta.comprobante_id)
-            .order("id");
-        if (error) { toast.error("No se pudo cargar el asiento."); return; }
-        setAsiento({ venta, lineas: data || [] });
-    };
-
-    const handleAnular = async (venta) => {
-        if (!puedeAnular) return;
-        if (venta.estado_contable === "ANULADO") { toast.error("La venta ya está anulada."); return; }
-        const { value: motivo } = await Swal.fire({
-            title: `Anular venta ${venta.numero_factura || "#" + venta.id_venta}`,
-            input: "textarea", inputLabel: "Motivo de la anulación (obligatorio)",
-            inputPlaceholder: "Describe el motivo…",
-            background: "#152235", color: "#fff", showCancelButton: true,
-            confirmButtonText: "Anular venta", cancelButtonText: "Cancelar", confirmButtonColor: "#ef4444",
-            inputValidator: (v) => (!v || v.trim().length < 3) && "El motivo es obligatorio",
+            .from("lineas_comprobante_contable")
+            .select("id_linea,id_cuenta,debe,haber,descripcion,cuenta:cuentas_contables(codigo,nombre)")
+            .eq("id_empresa", empresaId)
+            .eq("id_comprobante", venta.comprobante_id)
+            .order("numero_linea");
+        if (error) { toast.error(`No se pudo cargar el asiento: ${error.message}`); return; }
+        setAsiento({
+            venta,
+            lineas: (data || []).map((linea) => ({
+                id: linea.id_linea,
+                codigo: linea.cuenta?.codigo || "",
+                cuenta: linea.cuenta?.nombre || `Cuenta #${linea.id_cuenta}`,
+                debe: linea.debe,
+                haber: linea.haber,
+                descripcion: linea.descripcion,
+            })),
         });
-        if (!motivo) return;
-        const { error } = await supabase.rpc("sp_anular_venta", { p_id_venta: venta.id_venta, p_motivo: motivo });
-        if (error) { Swal.fire({ icon: "error", title: "No se pudo anular", text: error.message, background: "#152235", color: "#fff" }); return; }
-        toast.success("Venta anulada correctamente.");
-        fetchVentas();
     };
 
     // --- Validación de caja abierta (RF-12) ---
@@ -71,37 +63,39 @@ export default function Ventas() {
     const esSupervisor = ["superadmin", "admin", "gerente"].includes(rol);
     // null = aún verificando; true/false = resultado
     const [cajaAbierta, setCajaAbierta] = useState(esCajero ? null : true);
-    const [miAperturaId, setMiAperturaId] = useState(null);
+    const [miSesionId, setMiSesionId] = useState(null);
 
     useEffect(() => {
         let activo = true;
         const verificarCaja = async () => {
-            // Si no es cajero, no se aplica la restricción.
+            // La apertura se consulta con el esquema actual de sesiones de caja.
             if (!esCajero) {
                 setCajaAbierta(true);
                 return;
             }
-            if (!user?.id) return;
+            if (!user?.id || !empresaId) return;
             const { data, error } = await supabase
-                .from("apertura_caja")
-                .select("id")
-                .eq("id_cajero", user.id)
-                .eq("estado", "abierta")
-                .eq("id_empresa", EMPRESA_ID)
-                .limit(1);
+                .from("sesiones_caja")
+                .select("id_sesion")
+                .eq("abierta_por", user.id)
+                .eq("estado", "ABIERTA")
+                .eq("id_empresa", empresaId)
+                .order("abierta_en", { ascending: false })
+                .limit(1)
+                .maybeSingle();
             if (!activo) return;
             if (error) {
                 console.error("Error verificando caja abierta:", error.message);
                 setCajaAbierta(false);
                 return;
             }
-            const tiene = Array.isArray(data) && data.length > 0;
+            const tiene = Boolean(data?.id_sesion);
             setCajaAbierta(tiene);
-            setMiAperturaId(tiene ? data[0].id : null);
+            setMiSesionId(tiene ? data.id_sesion : null);
         };
         verificarCaja();
         return () => { activo = false; };
-    }, [esCajero, user]);
+    }, [empresaId, esCajero, user]);
 
     // El botón de venta se bloquea sólo cuando es cajero y ya se verificó que NO tiene caja abierta.
     const ventaBloqueada = esCajero && cajaAbierta === false;
@@ -113,7 +107,7 @@ export default function Ventas() {
     const ventasVisibles = (ventas || []).filter((v) => {
         if (!esCajero) return true;
         if (v.usuario_registra && user?.id && v.usuario_registra !== user.id) return false;
-        if (miAperturaId) return v.id_apertura_caja === miAperturaId;
+        if (miSesionId) return String(v.id_apertura_caja) === String(miSesionId);
         // Sin caja abierta: mostrar sólo las de hoy
         return (v.fecha_venta || "").slice(0, 10) === hoyStr;
     });
@@ -141,7 +135,7 @@ export default function Ventas() {
     const getStatusBadge = (estado) => {
         switch (estado) {
             case 'Pagada':
-                return <span className="justify-center items-center text-center flex gap-5 font-semibold"><CheckCircle size={15} color="green" />Cancelado</span>;
+                return <span className="justify-center items-center text-center flex gap-2 font-semibold"><CheckCircle size={15} color="green" />Pagada</span>;
             case 'Pendiente':
                 return <span className="bg-yellow-600/20 text-yellow-300 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"><Clock size={12} />Pendiente</span>;
             default:
@@ -152,31 +146,20 @@ export default function Ventas() {
 
     const handleCloseModal = () => {
         setIsModalOpen(false);
+        fetchVentas();
     };
 
     const handleVerFactura = async (venta) => {
         try {
-            // 1. Intentar recuperar la factura ya guardada
-            const { data: factura } = await supabase
-                .from("facturas")
-                .select("contenido_json")
-                .eq("numero_factura", venta.numero_factura)
-                .maybeSingle();
-
-            if (factura?.contenido_json) {
-                generarFacturaPDF(factura.contenido_json, "open");
-                return;
-            }
-
-            // 2. Reconstruir desde el detalle de la venta
             const { data: detalles, error } = await supabase
                 .from("detalle_ventas")
-                .select("cantidad, precio_unitario, descuento, id_producto, productos(nombre)")
+                .select("cantidad, precio_unitario, nombre_snapshot, sku_snapshot")
+                .eq("id_empresa", empresaId)
                 .eq("id_venta", venta.id_venta);
 
             if (error) throw error;
 
-            const clienteObj = clientes?.find(c => c.id_cliente === venta.id_cliente);
+            const clienteObj = clientes?.find(c => String(c.id_cliente) === String(venta.id_cliente));
             const datosFactura = {
                 numeroFactura: venta.numero_factura,
                 fecha: venta.fecha_venta
@@ -186,18 +169,18 @@ export default function Ventas() {
                 identificacion: clienteObj?.identificacion || "",
                 tipoPago: venta.tipo_pago || "",
                 items: (detalles || []).map(d => ({
-                    nombre: d.productos?.nombre || `Producto #${d.id_producto}`,
+                    nombre: d.nombre_snapshot || d.sku_snapshot || "Producto",
                     cantidad: d.cantidad,
                     precio: d.precio_unitario,
-                    descuento: d.descuento || 0,
                 })),
-                plazoDias: venta.plazo_dias || 0,
+                sucursal: venta.sucursal?.nombre || "",
+                plazoDias: 0,
             };
 
             generarFacturaPDF(datosFactura, "open");
         } catch (err) {
             console.error("Error al generar la factura:", err.message);
-            toast.error("No se pudo generar la factura.");
+            toast.error(`No se pudo generar la factura: ${err.message}`);
         }
     };
 
@@ -325,9 +308,9 @@ export default function Ventas() {
                                             <button onClick={() => handleVerAsiento(venta)} className="text-blue-400 cursor-pointer hover:text-blue-300 transition-colors" aria-label="Ver asiento" title="Ver asiento contable">
                                                 <Eye size={16} />
                                             </button>
-                                            {puedeAnular && venta.estado_contable !== "ANULADO" && (
-                                                <button onClick={() => handleAnular(venta)} className="text-red-500 cursor-pointer hover:text-red-400 transition-colors" aria-label="Anular" title="Anular venta">
-                                                    <Ban size={16} />
+                                            {puedeAnular && (
+                                                <button onClick={() => navigate("/dashboard/devoluciones")} className="text-amber-500 cursor-pointer hover:text-amber-400 transition-colors" aria-label="Gestionar devolución" title="Gestionar devolución">
+                                                    <RotateCcw size={16} />
                                                 </button>
                                             )}
                                         </td>

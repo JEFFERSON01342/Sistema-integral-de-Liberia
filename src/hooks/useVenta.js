@@ -1,12 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
-import { useAuth } from "../contexts/authcontext";
 
 export function useVenta() {
   const [ventas, setVentas] = useState(undefined);
   const { empresaId } = useEmpresa();
-  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -18,20 +16,39 @@ export function useVenta() {
 
     setIsLoading(true);
     setError(null);
-
     try {
-      // RLS ya limita las ventas por sucursal (superadmin ve todas).
-      const { data, error } = await supabase
+      const { data, error: queryError } = await supabase
         .from("ventas")
         .select(
-          "id_venta, numero_factura, id_cliente, fecha_venta, plazo_dias, monto_total, tipo_pago, estado, estado_contable, comprobante_id, motivo_anulacion, id_sucursal, id_apertura_caja, usuario_registra, canal, sucursal:sucursales(nombre)"
+          "id_venta, numero, id_cliente, fecha_operativa, registrada_en, metodo_pago, subtotal, impuesto, total, efectivo_recibido, cambio, costo_total_fifo, id_comprobante, id_sucursal, id_sesion, registrada_por"
         )
-        .eq('id_empresa', empresaId)
-        .order('fecha_venta', { ascending: false });
+        .eq("id_empresa", empresaId)
+        .order("registrada_en", { ascending: false });
 
-      if (error) throw error;
-      setVentas(data);
-
+      if (queryError) throw queryError;
+      const { data: sucursales, error: sucursalesError } = await supabase
+        .from("sucursales")
+        .select("id_sucursal,nombre")
+        .eq("id_empresa", empresaId);
+      if (sucursalesError) throw sucursalesError;
+      const sucursalesPorId = new Map((sucursales || []).map((sucursal) => [
+        String(sucursal.id_sucursal),
+        sucursal.nombre,
+      ]));
+      setVentas((data || []).map((venta) => ({
+        ...venta,
+        sucursal: { nombre: sucursalesPorId.get(String(venta.id_sucursal)) || "—" },
+        numero_factura: venta.numero,
+        fecha_venta: venta.registrada_en,
+        monto_total: venta.total,
+        tipo_pago: venta.metodo_pago,
+        comprobante_id: venta.id_comprobante,
+        id_apertura_caja: venta.id_sesion,
+        usuario_registra: venta.registrada_por,
+        canal: "sucursal",
+        estado: "Pagada",
+        estado_contable: venta.id_comprobante ? "CONTABILIZADO" : "PENDIENTE",
+      })));
     } catch (err) {
       console.error("Error cargando ventas:", err.message);
       setError(err.message);
@@ -45,44 +62,25 @@ export function useVenta() {
     fetchVentas();
   }, [fetchVentas]);
 
-
   const crearVenta = async (ventaData) => {
     setIsLoading(true);
     setError(null);
-
     try {
-      if (!empresaId || !ventaData.id_cliente || ventaData.detalle_items.length === 0) {
-        throw new Error("Faltan datos obligatorios: empresa, cliente o items.");
+      if (!empresaId || !ventaData.id_sesion || !Array.isArray(ventaData.detalle_items) || ventaData.detalle_items.length === 0) {
+        throw new Error("Se requiere una sesión de caja abierta y al menos un producto.");
       }
 
-      const { data: nuevaVentaId, error: rpcError } = await supabase.rpc("sp_registrar_venta", {
-        p_id_empresa: empresaId,
-        p_id_cliente: Number(ventaData.id_cliente),
-        p_tipo_pago: ventaData.tipo_pago,
-        p_detalle_ventas: ventaData.detalle_items,
-        p_numero_factura: ventaData.numero_factura,
-        p_fecha_vencimiento: ventaData.fechavencimiento,
-        p_plazo_dias: ventaData.plazo_dias
+      const { data: nuevaVentaId, error: rpcError } = await supabase.rpc("registrar_venta_pos", {
+        p_id_sesion: Number(ventaData.id_sesion),
+        p_items: ventaData.detalle_items,
+        p_pagos: ventaData.pagos,
+        p_idempotencia_key: ventaData.idempotencia_key,
+        p_id_cliente: ventaData.id_cliente ? Number(ventaData.id_cliente) : null,
       });
 
       if (rpcError) throw rpcError;
 
-      // Marcar quién registró la venta y a qué apertura de caja pertenece.
-      // (La sucursal la asigna automáticamente el trigger de stock por contexto del perfil.)
-      try {
-        const campos = {};
-        if (user?.id) campos.usuario_registra = user.id;
-        if (ventaData.id_apertura_caja) campos.id_apertura_caja = ventaData.id_apertura_caja;
-        if (Object.keys(campos).length > 0) {
-          await supabase.from("ventas").update(campos).eq("id_venta", nuevaVentaId);
-        }
-      } catch (e) {
-        console.warn("No se pudo asociar cajero/caja a la venta:", e.message);
-      }
-
-      await fetchVentas();
-      return nuevaVentaId;
-
+      return Number(nuevaVentaId);
     } catch (err) {
       console.error("Error creando venta:", err.message);
       setError(err.message);
