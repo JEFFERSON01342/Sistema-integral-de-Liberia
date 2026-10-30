@@ -4,7 +4,7 @@ import { useCajasBancos } from "../hooks/useCajasBancos";
 import { useCuentasContables } from "../hooks/useCuentasContables";
 import { useSucursalesOperativas } from "../hooks/useSucursalesOperativas";
 
-export default function ModalSaldoInicial({ onClose }) {
+export default function ModalSaldoInicial({ onClose, onSaved }) {
     const { registrarSaldoInicial, isSaving } = useCajasBancos();
     const { cuentas, isLoading } = useCuentasContables();
     const { sucursales, sucursalId, setSucursalId, isLoading: isLoadingSucursales } = useSucursalesOperativas();
@@ -32,7 +32,10 @@ export default function ModalSaldoInicial({ onClose }) {
             fecha,
             descripcion: "Asiento de Apertura (Saldo Inicial)",
         });
-        if (success) onClose();
+        if (success) {
+            await onSaved();
+            onClose();
+        }
     };
 
     return (

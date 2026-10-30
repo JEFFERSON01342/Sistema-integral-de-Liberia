@@ -7,7 +7,7 @@ import { useCuentasContables } from '../hooks/useCuentasContables';
 import { useSucursalesOperativas } from "../hooks/useSucursalesOperativas";
 import { useEmpresa } from "../contexts/empresacontext";
 
-export default function NuevomovCaja({ onClose, modo = "movimiento" }) {
+export default function NuevomovCaja({ onClose, onSaved, modo = "movimiento" }) {
     const { agregarMovimiento, depositarEnBanco, isSavingMov } = useCajasBancos();
     const { cuentas, isLoading: isLoadingCuentas } = useCuentasContables();
     const { sucursales, sucursalId, setSucursalId, isLoading: isLoadingSucursales } = useSucursalesOperativas();
@@ -79,7 +79,10 @@ export default function NuevomovCaja({ onClose, modo = "movimiento" }) {
                 descripcion,
                 referencia,
             });
-            if (result) onClose();
+            if (result) {
+                await onSaved();
+                onClose();
+            }
             return;
         }
 
@@ -110,6 +113,7 @@ export default function NuevomovCaja({ onClose, modo = "movimiento" }) {
         const result = await agregarMovimiento(movimiento);
 
         if (result) {
+            await onSaved();
             onClose();
         }
     };

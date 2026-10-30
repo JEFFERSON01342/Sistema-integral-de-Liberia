@@ -35,6 +35,7 @@ export default function CajasBancos() {
     const {
         movimientos,
         isLoading,
+        fetchMovimientos,
         revertirMovimiento,
         isDeletingMov
     } = useCajasBancos();
@@ -358,6 +359,7 @@ export default function CajasBancos() {
                     <div className="relative z-10 mx-4">
                         <NuevoMovCajas
                             modo={modoDeposito ? "deposito" : "movimiento"}
+                            onSaved={fetchMovimientos}
                             onClose={() => setIsModalOpen(false)}
                         />
                     </div>
@@ -377,7 +379,10 @@ export default function CajasBancos() {
             )}
 
             {isSaldoInicialOpen && (
-                <ModalSaldoInicial onClose={() => setIsSaldoInicialOpen(false)} />
+                <ModalSaldoInicial
+                    onSaved={fetchMovimientos}
+                    onClose={() => setIsSaldoInicialOpen(false)}
+                />
             )}
         </div>
     );
