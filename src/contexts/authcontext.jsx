@@ -8,36 +8,72 @@ export const AuthProvider = ({ children }) => {
   const [perfil, setPerfil] = useState(null);   // { rol, nombre_completo, ... }
   const [loading, setLoading] = useState(true);
   const perfilRef = useRef(null);
+  const usuarioActualRef = useRef(null);
+  const solicitudPerfilRef = useRef(null);
+
+  const cambiarUsuarioActual = (userId) => {
+    if (usuarioActualRef.current === userId) return;
+    usuarioActualRef.current = userId;
+    perfilRef.current = null;
+    setPerfil(null);
+    solicitudPerfilRef.current?.controller.abort();
+    solicitudPerfilRef.current = null;
+  };
 
   const cargarPerfil = async (userId) => {
     if (!userId) { setPerfil(null); return null; }
-    try {
-      // Timeout de 5 segundos para que la app no quede colgada si Supabase no responde
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout_perfil")), 5000)
-      );
-      const queryPromise = supabase
-        .from("perfiles")
-        .select("id, nombre_completo, email, telefono, rol, id_empresa, id_sucursal, activo, avatar_url")
-        .eq("id", userId)
-        .single();
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-      if (error) {
-        console.error("Error cargando perfil:", error.message);
-        // Si falla un refresco, conservar el perfil previo del MISMO usuario (no elevar permisos)
+    if (usuarioActualRef.current === null) usuarioActualRef.current = userId;
+    if (usuarioActualRef.current !== userId) return null;
+
+    const solicitudPendiente = solicitudPerfilRef.current;
+    if (solicitudPendiente?.userId === userId) return solicitudPendiente.promise;
+
+    const controller = new AbortController();
+    const promise = (async () => {
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        const { data, error } = await supabase
+          .from("perfiles")
+          .select("id, nombre_completo, email, telefono, rol, id_empresa, id_sucursal, activo, avatar_url")
+          .eq("id", userId)
+          .abortSignal(controller.signal)
+          .single();
+        if (error) {
+          if (usuarioActualRef.current !== userId) return null;
+          console.error(
+            controller.signal.aborted ? "Timeout o error al cargar perfil:" : "Error cargando perfil:",
+            controller.signal.aborted ? "timeout_perfil" : error.message
+          );
+          const previo = perfilRef.current;
+          if (previo && previo.id === userId) return previo;
+          perfilRef.current = null;
+          setPerfil(null);
+          return null;
+        }
+        if (usuarioActualRef.current !== userId) return null;
+        perfilRef.current = data;
+        setPerfil(data);
+        return data;
+      } catch (err) {
+        if (usuarioActualRef.current !== userId) return null;
+        const mensaje = controller.signal.aborted ? "timeout_perfil" : err.message;
+        console.error("Timeout o error al cargar perfil:", mensaje);
         const previo = perfilRef.current;
         if (previo && previo.id === userId) return previo;
-        setPerfil(null); return null;
+        perfilRef.current = null;
+        setPerfil(null);
+        return null;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      perfilRef.current = data;
-      setPerfil(data);
-      return data;
-    } catch (err) {
-      console.error("Timeout o error al cargar perfil:", err.message);
-      const previo = perfilRef.current;
-      if (previo && previo.id === userId) return previo;
-      setPerfil(null);
-      return null;
+    })();
+
+    const solicitud = { userId, controller, promise };
+    solicitudPerfilRef.current = solicitud;
+    try {
+      return await promise;
+    } finally {
+      if (solicitudPerfilRef.current === solicitud) solicitudPerfilRef.current = null;
     }
   };
 
@@ -49,6 +85,7 @@ export const AuthProvider = ({ children }) => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!mounted) return;
+        cambiarUsuarioActual(session?.user?.id ?? null);
         setSession(session);
         if (session?.user) await cargarPerfil(session.user.id);
       } catch (err) {
@@ -62,20 +99,27 @@ export const AuthProvider = ({ children }) => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
+      const userId = session?.user?.id ?? null;
+      cambiarUsuarioActual(userId);
       setSession(session);
-      if (session?.user) {
+      if (userId) {
         // Evitar recargar el perfil en refrescos de token del mismo usuario
-        if (perfilRef.current?.id !== session.user.id) {
-          await cargarPerfil(session.user.id);
+        if (perfilRef.current?.id !== userId) {
+          // Auth callbacks must return before making further Supabase requests.
+          setTimeout(() => {
+            if (!mounted || usuarioActualRef.current !== userId) return;
+            cargarPerfil(userId).finally(() => {
+              if (mounted && usuarioActualRef.current === userId) setLoading(false);
+            });
+          }, 0);
+        } else {
+          setLoading(false);
         }
       } else {
-        perfilRef.current = null;
-        setPerfil(null);
+        setLoading(false);
       }
-      // Garantizar que loading baje si onAuthStateChange dispara antes que initAuth termine
-      if (mounted) setLoading(false);
     });
 
     return () => {
