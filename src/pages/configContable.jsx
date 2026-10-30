@@ -7,6 +7,16 @@ import Tabs from "../components/tabs";
 import { toast } from "react-hot-toast";
 
 const TIPOS_IMPUESTO = ["IVA", "RETENCION", "OTRO"];
+const nuevaLineaRegla = (lado = "DEBE") => ({
+    componente: "",
+    lado,
+    id_cuenta: "",
+});
+const reglaVacia = () => ({
+    evento: "",
+    nombre: "",
+    lineas: [nuevaLineaRegla("DEBE"), nuevaLineaRegla("HABER")],
+});
 
 const impuestoVacio = (empresaId) => ({
     id_empresa: empresaId,
@@ -25,7 +35,7 @@ const impuestoVacio = (empresaId) => ({
 export default function ConfigContable() {
     const { empresaId } = useEmpresa();
     const { rol } = useAuth();
-    const puedeEditar = ["superadmin", "admin", "gerente"].includes(rol);
+    const puedeEditar = ["superadmin", "admin"].includes(rol);
     const tabs = [
         { key: "reglas", label: "Reglas Contables", icon: <ListChecks size={16} /> },
         { key: "impuestos", label: "Impuestos", icon: <Percent size={16} /> },
@@ -36,6 +46,7 @@ export default function ConfigContable() {
     const [cuentas, setCuentas] = useState([]);
     const [impuestos, setImpuestos] = useState([]);
     const [impuestoEditando, setImpuestoEditando] = useState(null);
+    const [reglaEditando, setReglaEditando] = useState(null);
     const [loading, setLoading] = useState(false);
     const [guardando, setGuardando] = useState(false);
 
@@ -53,7 +64,7 @@ export default function ConfigContable() {
                     .eq("id_empresa", empresaId)
                     .order("id_linea_regla"),
                 supabase.from("cuentas_contables")
-                    .select("id_cuenta, codigo, nombre, activa")
+                    .select("id_cuenta, codigo, nombre, activa, es_grupo, permite_movimientos")
                     .eq("id_empresa", empresaId)
                     .order("codigo"),
                 supabase.from("impuestos_config")
@@ -106,6 +117,62 @@ export default function ConfigContable() {
         setReglas((actuales) => actuales.map((item) =>
             item.id_regla === regla.id_regla ? { ...item, activa: !regla.activa } : item
         ));
+    };
+
+    const guardarRegla = async (event) => {
+        event.preventDefault();
+        if (!puedeEditar || !reglaEditando) return;
+        const evento = reglaEditando.evento.trim().toUpperCase();
+        const nombre = reglaEditando.nombre.trim();
+        const lineas = reglaEditando.lineas.map((linea) => ({
+            componente: linea.componente.trim(),
+            lado: linea.lado,
+            id_cuenta: linea.id_cuenta ? Number(linea.id_cuenta) : null,
+        }));
+        const componentes = lineas.map((linea) => linea.componente.toLocaleLowerCase());
+        if (!/^[A-Z][A-Z0-9_]{2,79}$/.test(evento)) {
+            toast.error("El evento debe usar de 3 a 80 caracteres: letras, números y guion bajo.");
+            return;
+        }
+        if (!nombre || nombre.length > 160) {
+            toast.error("El nombre es obligatorio y no debe exceder 160 caracteres.");
+            return;
+        }
+        if (lineas.length < 2 || lineas.some((linea) => (
+            !linea.componente || linea.componente.length > 80
+            || !["DEBE", "HABER"].includes(linea.lado)
+            || !linea.id_cuenta
+        ))) {
+            toast.error("Cada línea requiere componente, lado y cuenta contable.");
+            return;
+        }
+        if (new Set(componentes).size !== componentes.length) {
+            toast.error("Cada componente debe aparecer una sola vez en la regla.");
+            return;
+        }
+        if (!lineas.some((linea) => linea.lado === "DEBE")
+            || !lineas.some((linea) => linea.lado === "HABER")) {
+            toast.error("La regla debe incluir al menos un componente al Debe y otro al Haber.");
+            return;
+        }
+
+        setGuardando(true);
+        try {
+            const { error } = await supabase.rpc("crear_regla_contable", {
+                p_id_empresa: empresaId,
+                p_evento: evento,
+                p_nombre: nombre,
+                p_lineas: lineas,
+            });
+            if (error) throw error;
+            toast.success("Plantilla contable creada.");
+            setReglaEditando(null);
+            await cargar();
+        } catch (error) {
+            toast.error(`No se pudo crear la regla contable: ${error.message}`);
+        } finally {
+            setGuardando(false);
+        }
     };
 
     const guardarImpuesto = async (event) => {
@@ -185,8 +252,14 @@ export default function ConfigContable() {
                 <Settings className="text-title" size={26} />
                 <div>
                     <h1 className="text-title text-2xl font-bold">Configuración Contable</h1>
-                    <p className="text-subtitle text-sm">Reglas para asientos automáticos y parámetros de impuestos.</p>
+                    <p className="text-subtitle text-sm">Plantillas contables de referencia y parámetros de impuestos.</p>
                 </div>
+            </div>
+
+            <div className="erp-card border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+                Configuración para simulación y aprendizaje. Las reglas y tasas de esta pantalla se guardan como referencia:
+                actualmente no modifican automáticamente los asientos de ventas, compras, pagos ni los impuestos cobrados.
+                No uses estos valores para declarar o pagar impuestos.
             </div>
 
             <Tabs tabs={tabs} activeKey={activeTab} onChange={setActiveTab} />
@@ -199,6 +272,148 @@ export default function ConfigContable() {
 
             {activeTab === "reglas" && (
                 <div className="flex flex-col gap-4">
+                    <div className="flex justify-end">
+                        {puedeEditar && !reglaEditando && (
+                            <button onClick={() => setReglaEditando(reglaVacia())} className="btn-primary">
+                                <Plus size={16} /> Nueva plantilla
+                            </button>
+                        )}
+                    </div>
+                    {reglaEditando && (
+                        <form onSubmit={guardarRegla} className="erp-card p-4 flex flex-col gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <label className="flex flex-col gap-1 text-subtitle text-sm">
+                                    Código del evento
+                                    <input
+                                        required
+                                        maxLength={80}
+                                        value={reglaEditando.evento}
+                                        onChange={(e) => setReglaEditando({
+                                            ...reglaEditando,
+                                            evento: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"),
+                                        })}
+                                        placeholder="SIM_VENTA_CONTADO"
+                                        className="bg-input text-title border border-secondary rounded-lg px-3 py-2"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-subtitle text-sm">
+                                    Nombre de la plantilla
+                                    <input
+                                        required
+                                        maxLength={160}
+                                        value={reglaEditando.nombre}
+                                        onChange={(e) => setReglaEditando({ ...reglaEditando, nombre: e.target.value })}
+                                        placeholder="Venta de productos al contado (simulación)"
+                                        className="bg-input text-title border border-secondary rounded-lg px-3 py-2"
+                                    />
+                                </label>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-subtitle text-left border-b border-secondary">
+                                            <th className="py-2 pr-3">Componente</th>
+                                            <th className="py-2 pr-3">Lado</th>
+                                            <th className="py-2">Cuenta contable</th>
+                                            <th />
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {reglaEditando.lineas.map((linea, index) => (
+                                            <tr key={index} className="border-b border-secondary/50">
+                                                <td className="py-2 pr-3">
+                                                    <input
+                                                        required
+                                                        maxLength={80}
+                                                        value={linea.componente}
+                                                        onChange={(e) => setReglaEditando({
+                                                            ...reglaEditando,
+                                                            lineas: reglaEditando.lineas.map((item, i) => (
+                                                                i === index ? { ...item, componente: e.target.value } : item
+                                                            )),
+                                                        })}
+                                                        placeholder="EFECTIVO"
+                                                        className="bg-input text-title border border-secondary rounded-lg px-3 py-2"
+                                                    />
+                                                </td>
+                                                <td className="py-2 pr-3">
+                                                    <select
+                                                        value={linea.lado}
+                                                        onChange={(e) => setReglaEditando({
+                                                            ...reglaEditando,
+                                                            lineas: reglaEditando.lineas.map((item, i) => (
+                                                                i === index ? { ...item, lado: e.target.value } : item
+                                                            )),
+                                                        })}
+                                                        className="bg-input text-title border border-secondary rounded-lg px-3 py-2"
+                                                    >
+                                                        <option value="DEBE">Debe</option>
+                                                        <option value="HABER">Haber</option>
+                                                    </select>
+                                                </td>
+                                                <td className="py-2">
+                                                    <select
+                                                        required
+                                                        value={linea.id_cuenta}
+                                                        onChange={(e) => setReglaEditando({
+                                                            ...reglaEditando,
+                                                            lineas: reglaEditando.lineas.map((item, i) => (
+                                                                i === index ? { ...item, id_cuenta: e.target.value } : item
+                                                            )),
+                                                        })}
+                                                        className="bg-input text-title border border-secondary rounded-lg px-3 py-2 min-w-[250px]"
+                                                    >
+                                                        <option value="">Seleccione cuenta...</option>
+                                                        {cuentas.filter((cuenta) => (
+                                                            cuenta.activa && !cuenta.es_grupo && cuenta.permite_movimientos
+                                                        )).map((cuenta) => (
+                                                            <option key={cuenta.id_cuenta} value={cuenta.id_cuenta}>
+                                                                {cuenta.codigo} · {cuenta.nombre}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td className="py-2 pl-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={reglaEditando.lineas.length <= 2}
+                                                        onClick={() => setReglaEditando({
+                                                            ...reglaEditando,
+                                                            lineas: reglaEditando.lineas.filter((_, i) => i !== index),
+                                                        })}
+                                                        className="btn-secondary text-xs disabled:opacity-40"
+                                                        aria-label="Quitar línea"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="flex flex-wrap justify-between gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setReglaEditando({
+                                        ...reglaEditando,
+                                        lineas: [...reglaEditando.lineas, nuevaLineaRegla()],
+                                    })}
+                                    className="btn-secondary"
+                                >
+                                    <Plus size={15} /> Agregar componente
+                                </button>
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setReglaEditando(null)} className="btn-secondary">
+                                        <X size={15} /> Cancelar
+                                    </button>
+                                    <button type="submit" disabled={guardando} className="btn-primary">
+                                        <Save size={15} /> {guardando ? "Guardando…" : "Crear plantilla"}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    )}
                     {reglas.map((regla) => (
                         <section key={regla.id_regla} className="erp-card p-4">
                             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -212,7 +427,7 @@ export default function ConfigContable() {
                                         onClick={() => cambiarEstadoRegla(regla)}
                                         className="btn-secondary text-xs"
                                     >
-                                        {regla.activa ? "Desactivar" : "Activar"}
+                                        {regla.activa ? "Desactivar referencia" : "Activar referencia"}
                                     </button>
                                 )}
                             </div>
