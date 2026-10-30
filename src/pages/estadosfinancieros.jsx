@@ -6,6 +6,7 @@ import { useAuth } from "../contexts/authcontext";
 import { toast } from "react-hot-toast";
 import Tabs from "../components/tabs";
 import usePersistentState from "../hooks/usePersistentState";
+import SucursalAlcanceFinanciero from "../components/SucursalAlcanceFinanciero";
 
 const getTodayString = () => {
     const today = new Date();
@@ -93,7 +94,7 @@ function csvCell(value, isNumeric = false) {
 }
 
 export default function EstadosFinancieros() {
-    const { empresaId } = useEmpresa();
+    const { empresaId, alcanceSucursalId, alcanceSucursalNombre } = useEmpresa();
     const { perfil, rol } = useAuth();
     const [activeTab, setActiveTab] = useState("balance");
     const [fechaInicio, setFechaInicio] = usePersistentState("finance_erp_fecha_inicio", getTodayString());
@@ -113,13 +114,20 @@ export default function EstadosFinancieros() {
         }
 
         setIsLoading(true);
-        const common = { p_id_empresa: empresaId, p_fecha_desde: fechaInicio, p_fecha_hasta: fechaCierre };
+        setReports({ balanza: [], balance: [], resultados: [], flujo: [], origen: [] });
+        const common = {
+            p_id_empresa: empresaId,
+            p_fecha_desde: fechaInicio,
+            p_fecha_hasta: fechaCierre,
+            p_id_sucursal: alcanceSucursalId,
+        };
         try {
             const results = await Promise.all([
                 supabase.rpc("reporte_balanza_comprobacion", common),
                 supabase.rpc("reporte_balance_general", {
                     p_id_empresa: empresaId,
                     p_fecha_corte: fechaCierre,
+                    p_id_sucursal: alcanceSucursalId,
                 }),
                 supabase.rpc("reporte_estado_resultados", common),
                 supabase.rpc("reporte_flujo_efectivo", common),
@@ -141,7 +149,7 @@ export default function EstadosFinancieros() {
         } finally {
             setIsLoading(false);
         }
-    }, [empresaId, fechaInicio, fechaCierre]);
+    }, [empresaId, fechaInicio, fechaCierre, alcanceSucursalId]);
 
     useEffect(() => {
         handleGenerarReporte();
@@ -216,7 +224,10 @@ export default function EstadosFinancieros() {
         }
         setIsProcessing(true);
         try {
-            let idSucursal = perfil?.id_sucursal;
+            let idSucursal = alcanceSucursalId || perfil?.id_sucursal;
+            if (rol === "superadmin" && !idSucursal) {
+                throw new Error("Seleccione una sucursal específica antes de registrar la depreciación.");
+            }
             if (!idSucursal) {
                 const { data, error } = await supabase
                     .from("sucursales")
@@ -277,11 +288,16 @@ export default function EstadosFinancieros() {
                         <Download size={16} /> Exportar
                     </button>
                     {["superadmin", "admin"].includes(rol) && (
-                        <button onClick={handleRegistrarDepreciacion} disabled={isProcessing || isLoading} className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
+                        <button onClick={handleRegistrarDepreciacion} disabled={isProcessing || isLoading || (rol === "superadmin" && !alcanceSucursalId)} className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
                             <Zap size={16} /> {isProcessing ? "Procesando..." : "Registrar depreciación"}
                         </button>
                     )}
                 </div>
+            </div>
+
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3 rounded-xl border border-secondary bg-card p-4">
+                <SucursalAlcanceFinanciero />
+                <p className="text-xs text-subtitle">Reportes correspondientes a: <span className="font-semibold text-title">{alcanceSucursalNombre}</span></p>
             </div>
 
             <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">

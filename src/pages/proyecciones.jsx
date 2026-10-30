@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { TrendingUp, Calendar, Percent, Calculator } from "lucide-react";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
 import { toast } from "react-hot-toast";
+import SucursalAlcanceFinanciero from "../components/SucursalAlcanceFinanciero";
 
 const getTodayString = () => {
     const today = new Date();
@@ -11,20 +12,22 @@ const getTodayString = () => {
 }
 
 export default function Proyecciones() {
-    const { empresaId } = useEmpresa();
+    const { empresaId, alcanceSucursalId, alcanceSucursalNombre } = useEmpresa();
     const [fechaBase, setFechaBase] = useState(getTodayString());
     const [porcentajeCrecimiento, setPorcentajeCrecimiento] = useState(10); // 10% por defecto
     const [cuentasBase, setCuentasBase] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
 
     // 1. Cargar los datos reales (Base)
-    const fetchDatosBase = async () => {
+    const fetchDatosBase = useCallback(async () => {
         if (!empresaId) return;
         setIsLoading(true);
+        setCuentasBase([]);
         try {
             const { data, error } = await supabase.rpc('reporte_balance_general', {
                 p_id_empresa: empresaId,
                 p_fecha_corte: fechaBase,
+                p_id_sucursal: alcanceSucursalId,
             });
             if (error) throw error;
             setCuentasBase((data || []).map((cuenta) => ({
@@ -42,12 +45,12 @@ export default function Proyecciones() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [empresaId, fechaBase, alcanceSucursalId]);
 
     // Cargar al inicio o cuando cambie la fecha
     useEffect(() => {
         fetchDatosBase();
-    }, [empresaId, fechaBase]);
+    }, [fetchDatosBase]);
 
     // 2. Calcular la Proyección (Lógica Financiera)
     // 2. Calcular la Proyección (Lógica Financiera Avanzada)
@@ -132,10 +135,11 @@ export default function Proyecciones() {
                     <h4 className="font-semibold text-xl text-title flex items-center gap-2">
                         <TrendingUp className="text-green-500" /> Proyecciones Financieras
                     </h4>
-                    <p className="text-subtitle text-sm">Crecimiento de tu empresa para el próximo periodo.</p>
+                    <p className="text-subtitle text-sm">Escenario basado en el balance de {alcanceSucursalNombre.toLowerCase()}.</p>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 bg-secondary p-3 rounded-xl border border-secondary">
+                    <SucursalAlcanceFinanciero />
                     <div className="flex flex-col gap-1">
                         <label className="text-xs font-bold text-subtitle uppercase">Fecha Base</label>
                         <div className="flex items-center gap-2 bg-input rounded-lg px-3 py-1.5 border border-secondary">

@@ -12,6 +12,7 @@ import { useAuth } from "../contexts/authcontext";
 import { useTheme } from "../contexts/themecontext";
 import Swal from "sweetalert2";
 import { useSettings } from "../contexts/settingscontext";
+import { useEmpresa } from "../contexts/empresacontext";
 import Avatar from "../components/avatar";
 
 // Navegación agrupada por secciones. Cada enlace declara qué roles pueden verlo.
@@ -210,6 +211,7 @@ const SidebarContent = ({
 
 export default function Dashboard() {
     const { session, perfil, rol, logoutUser } = useAuth();
+    const { alcanceSucursalNombre } = useEmpresa();
     const { theme, toggleTheme } = useTheme();
     const { settings, t, locale } = useSettings();
     const navigate = useNavigate();
@@ -322,6 +324,12 @@ export default function Dashboard() {
 
                     {/* Derecha: avatar + tema + salir */}
                     <div className="flex items-center gap-2 md:gap-3">
+                        <div
+                            className="hidden max-w-48 truncate rounded-lg border border-secondary px-2.5 py-1.5 text-xs text-subtitle lg:block"
+                            title="El alcance se conectará a los filtros de cada módulo por etapas"
+                        >
+                            Alcance: {alcanceSucursalNombre}
+                        </div>
                         <button onClick={irPerfil} title={t("Mi cuenta")} className="flex items-center gap-2.5 pr-1 rounded-lg hover:bg-secondary p-1 transition-colors">
                             <Avatar src={avatarUrl} nombre={nombreUsuario} size={36} />
                             <div className="hidden md:flex flex-col leading-tight text-left">

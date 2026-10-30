@@ -14,7 +14,11 @@ const PENDIENTES_WEB = ["PENDIENTE", "LISTO"];
 
 export default function VistaSucursales() {
   const { rol } = useAuth();
-  const { empresaId } = useEmpresa();
+  const {
+    empresaId,
+    sucursalAlcance,
+    setSucursalAlcance,
+  } = useEmpresa();
   const [sucursales, setSucursales] = useState([]);
   const [kpis, setKpis] = useState({});
   const [isLoading, setIsLoading] = useState(true);
@@ -144,9 +148,29 @@ export default function VistaSucursales() {
       <div className="flex items-center gap-3 mt-2 mb-5">
         <Building2 className="text-title" size={26} />
         <div>
-          <h2 className="text-title text-2xl font-bold">Vista global de sucursales</h2>
+          <h2 className="text-title text-2xl font-bold">Vista de sucursales</h2>
           <p className="text-subtitle text-sm">Resumen consolidado de todas las sucursales de Librería Lisjuashde.</p>
         </div>
+      </div>
+
+      <div className="erp-card mb-6 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-title font-semibold">Alcance seleccionado para la sesión</p>
+          <p className="text-subtitle text-sm">
+            {sucursalAlcance
+              ? `Sucursal: ${sucursalAlcance.nombre}`
+              : "Toda la empresa"}
+            {" · "}Los módulos se conectarán a este filtro por etapas.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSucursalAlcance(null)}
+          disabled={!sucursalAlcance}
+          className="btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Ver toda la empresa
+        </button>
       </div>
 
       {/* Totales */}
@@ -173,9 +197,21 @@ export default function VistaSucursales() {
                       <p className="text-subtitle text-xs">{s.direccion || "—"}{s.telefono ? ` · Tel. ${s.telefono}` : ""}</p>
                     </div>
                   </div>
-                  <button onClick={() => setDetalle(s)} className="btn-secondary text-sm whitespace-nowrap">
-                    Ver detalle <ArrowRight size={14} />
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSucursalAlcance({
+                        id: s.id_sucursal,
+                        nombre: s.nombre,
+                      })}
+                      className="btn-primary text-sm whitespace-nowrap"
+                    >
+                      {sucursalAlcance?.id === s.id_sucursal ? "Alcance activo" : "Usar esta sucursal"}
+                    </button>
+                    <button onClick={() => setDetalle(s)} className="btn-secondary text-sm whitespace-nowrap">
+                      Ver detalle <ArrowRight size={14} />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Mini label="Ventas hoy" value={fmt(k.ventasHoy)} icon={<DollarSign size={15} />} />
