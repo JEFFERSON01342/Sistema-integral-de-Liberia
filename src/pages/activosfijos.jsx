@@ -10,7 +10,7 @@ export default function ActivosFijos() {
     const { activosFijos } = useActivosFijos();
 
     const totalActivos = activosFijos.length;
-    const valorTotalActivos = activosFijos.reduce((sum, item) => sum + (item.valor_compra || 0), 0);
+    const valorTotalActivos = activosFijos.reduce((sum, item) => sum + Number(item.costo_adquisicion || 0), 0);
     const depreciacionAcumulada = 0;
     const enMantenimiento = 0;
     return (
@@ -50,7 +50,7 @@ export default function ActivosFijos() {
                 <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
                     <div className="absolute inset-0" onClick={() => setIsModalOpen(false)}></div>
                     <div className="relative z-10 mx-4">
-                        <NuevoActivoFijo onClose={() => setIsModalOpen(false)} totalActivos={activosFijos.length} />
+                        <NuevoActivoFijo onClose={() => setIsModalOpen(false)} />
                     </div>
                 </div>
             )}

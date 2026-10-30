@@ -22,6 +22,7 @@ export default function CajasBancos() {
     const { empresaId } = useEmpresa();
     const [activeTab, setActiveTab] = useState("movimientos");
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modoDeposito, setModoDeposito] = useState(false);
     const [isPrestamoModalOpen, setIsPrestamoModalOpen] = useState(false);
     const [isSaldoInicialOpen, setIsSaldoInicialOpen] = useState(false);
     const {
@@ -191,9 +192,26 @@ export default function CajasBancos() {
                                     >
                                         + Registrar Saldo Inicial (Capital)
                                     </button>
-                                    <button className="btn-new bg-button text-button flex flex-row h-10 text-s gap-3 p-2 rounded-xl items-center cursor-pointer hover:opacity-95 hover:scale-110 transition" onClick={() => setIsModalOpen(true)}>
-                                        <span className="icon"><Plus /></span> Nuevo Movimiento
-                                    </button>
+                                    <div className="flex flex-wrap gap-3">
+                                        <button
+                                            className="btn-new border border-secondary text-title flex flex-row h-10 text-s gap-3 p-2 rounded-xl items-center cursor-pointer hover:opacity-95 hover:scale-105 transition"
+                                            onClick={() => {
+                                                setModoDeposito(true);
+                                                setIsModalOpen(true);
+                                            }}
+                                        >
+                                            <Banknote size={18} /> Depositar a Banco
+                                        </button>
+                                        <button
+                                            className="btn-new bg-button text-button flex flex-row h-10 text-s gap-3 p-2 rounded-xl items-center cursor-pointer hover:opacity-95 hover:scale-105 transition"
+                                            onClick={() => {
+                                                setModoDeposito(false);
+                                                setIsModalOpen(true);
+                                            }}
+                                        >
+                                            <span className="icon"><Plus /></span> Nuevo Movimiento
+                                        </button>
+                                    </div>
                                 </div>
 
                             </div>
@@ -339,8 +357,8 @@ export default function CajasBancos() {
                     <div className="absolute inset-0" onClick={() => setIsModalOpen(false)}></div>
                     <div className="relative z-10 mx-4">
                         <NuevoMovCajas
+                            modo={modoDeposito ? "deposito" : "movimiento"}
                             onClose={() => setIsModalOpen(false)}
-                            onMovimientoAgregado={() => setIsModalOpen(false)}
                         />
                     </div>
                 </div>

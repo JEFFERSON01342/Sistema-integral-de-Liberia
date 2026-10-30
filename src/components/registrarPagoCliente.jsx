@@ -1,64 +1,103 @@
-import { Save } from 'lucide-react';
-import { useState, useMemo } from 'react'; // <-- 1. Importa useMemo
+import { Save } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
-import { useCuentasPorCobrar } from '../hooks/useCuentasPorCobrar';
-import { useCuentas } from '../hooks/useCuentas';
+import { useCuentasPorCobrar } from "../hooks/useCuentasPorCobrar";
+import { supabase } from "../supabase/supabaseclient";
 
 export default function RegistrarPagoCliente({ onClose, factura }) {
     const { registrarPago, isSaving } = useCuentasPorCobrar();
-    const { catalogoCuentas, isLoading: isLoadingCuentas } = useCuentas();
+    const [montoPagado, setMontoPagado] = useState(Number(factura.saldo_pendiente).toFixed(2));
+    const [metodoPago, setMetodoPago] = useState("TRANSFERENCIA");
+    const [referencia, setReferencia] = useState("");
+    const [sesiones, setSesiones] = useState([]);
+    const [idSesion, setIdSesion] = useState("");
+    const [isLoadingSesiones, setIsLoadingSesiones] = useState(false);
+    const [claveIdempotencia] = useState(() => crypto.randomUUID());
 
-    const [montoPagado, setMontoPagado] = useState(factura.saldo_pendiente.toFixed(2));
-    const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
-    const [idCuentaBanco, setIdCuentaBanco] = useState('');
+    useEffect(() => {
+        if (metodoPago !== "EFECTIVO" || !factura.id_sucursal) {
+            setSesiones([]);
+            setIdSesion("");
+            return;
+        }
 
-    // --- 2. LÓGICA CORREGIDA PARA ENCONTRAR CUENTAS ---
-    const { cuentasDeEfectivo, idCuentaCxC } = useMemo(() => {
-        if (!catalogoCuentas) return { cuentasDeEfectivo: [], idCuentaCxC: null };
+        let cancelled = false;
+        const cargarSesiones = async () => {
+            setIsLoadingSesiones(true);
+            const { data: abiertas, error: sesionesError } = await supabase
+                .from("sesiones_caja")
+                .select("id_sesion, id_caja")
+                .eq("id_sucursal", factura.id_sucursal)
+                .eq("estado", "ABIERTA")
+                .order("id_sesion", { ascending: false });
+            if (sesionesError) {
+                if (!cancelled) toast.error(`No se pudieron cargar las cajas abiertas: ${sesionesError.message}`);
+                if (!cancelled) setSesiones([]);
+                if (!cancelled) setIsLoadingSesiones(false);
+                return;
+            }
 
-        // Asume que ID 1 = Activo
-        const efectivo = catalogoCuentas.filter(c => c.id_tipo === 1);
-
-        // Encuentra dinámicamente el ID de la cuenta "Clientes"
-        const cxc = catalogoCuentas.find(c => c.nombre.toLowerCase() === 'clientes');
-
-        return {
-            cuentasDeEfectivo: efectivo,
-            idCuentaCxC: cxc ? cxc.id_cuenta : null // <-- ID Dinámico
+            const cajasIds = [...new Set((abiertas || []).map((sesion) => sesion.id_caja))];
+            let cajas = [];
+            if (cajasIds.length) {
+                const { data, error: cajasError } = await supabase
+                    .from("cajas")
+                    .select("id_caja, nombre")
+                    .in("id_caja", cajasIds);
+                if (cajasError) {
+                    if (!cancelled) toast.error(`No se pudieron cargar las cajas: ${cajasError.message}`);
+                    if (!cancelled) setSesiones([]);
+                    if (!cancelled) setIsLoadingSesiones(false);
+                    return;
+                }
+                cajas = data || [];
+            }
+            const nombresPorCaja = new Map(cajas.map((caja) => [caja.id_caja, caja.nombre]));
+            if (!cancelled) {
+                const opciones = (abiertas || []).map((sesion) => ({
+                    ...sesion,
+                    nombre_caja: nombresPorCaja.get(sesion.id_caja) || `Caja ${sesion.id_caja}`,
+                }));
+                setSesiones(opciones);
+                setIdSesion((actual) =>
+                    opciones.some((sesion) => String(sesion.id_sesion) === actual)
+                        ? actual
+                        : String(opciones[0]?.id_sesion || "")
+                );
+                setIsLoadingSesiones(false);
+            }
         };
-    }, [catalogoCuentas]);
-    // --- FIN DE LA CORRECCIÓN ---
+        cargarSesiones();
+        return () => {
+            cancelled = true;
+        };
+    }, [factura.id_empresa, factura.id_sucursal, metodoPago]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-
-        // --- 3. VALIDACIÓN MEJORADA ---
-        if (!idCuentaCxC) {
-            toast.error("Error: No se pudo encontrar la cuenta 'Clientes' en el catálogo.");
+        const monto = Number(montoPagado);
+        if (!factura.id_factura || !Number.isFinite(monto) || monto <= 0) {
+            toast.error("Ingrese un monto válido.");
             return;
         }
-        if (!idCuentaBanco || !montoPagado || Number(montoPagado) <= 0) {
-            toast.error("Seleccione una cuenta de banco y un monto válido.");
-            return;
-        }
-        if (Number(montoPagado) > factura.saldo_pendiente) {
+        if (monto > Number(factura.saldo_pendiente)) {
             toast.error("El pago no puede ser mayor al saldo pendiente.");
             return;
         }
-
-        const pago = {
-            id_cliente: factura.id_cliente,
-            id_venta: factura.id_venta,
-            monto_pagado: Number(montoPagado),
-            fecha_pago: fechaPago,
-            id_cuenta_banco: Number(idCuentaBanco),
-            id_cuenta_cxc: idCuentaCxC // <-- 4. USA EL ID DINÁMICO
-        };
-
-        const { success } = await registrarPago(pago);
-        if (success) {
-            onClose();
+        if (metodoPago === "EFECTIVO" && !idSesion) {
+            toast.error("Seleccione una sesión de caja abierta en la sucursal de la venta.");
+            return;
         }
+
+        const { success } = await registrarPago({
+            id_factura: factura.id_factura,
+            monto_pagado: monto,
+            metodo_pago: metodoPago,
+            id_sesion: metodoPago === "EFECTIVO" ? Number(idSesion) : null,
+            referencia: referencia.trim(),
+            clave_idempotencia: claveIdempotencia,
+        });
+        if (success) onClose();
     };
 
     return (
@@ -66,59 +105,79 @@ export default function RegistrarPagoCliente({ onClose, factura }) {
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-2xl font-semibold">Registrar Pago</h3>
             </div>
-            <div className='mb-4 border border-secondary/30 rounded-lg p-3 text-sm'>
+            <div className="mb-4 border border-secondary/30 rounded-lg p-3 text-sm">
                 <p><strong>Cliente:</strong> {factura.nombre_cliente}</p>
-                <p><strong>Factura:</strong> {factura.codigo_venta}</p>
-                <p><strong>Saldo Pendiente:</strong> <span className='font-bold text-red-400'>C$ {factura.saldo_pendiente.toFixed(2)}</span></p>
+                <p><strong>Factura:</strong> {factura.numero_factura}</p>
+                <p><strong>Saldo Pendiente:</strong> <span className="font-bold text-red-400">C$ {Number(factura.saldo_pendiente).toFixed(2)}</span></p>
             </div>
 
             <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                     <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium text-title">Monto a Pagar</label>
+                        <label className="text-sm font-medium text-title">Monto a pagar</label>
                         <input
                             type="number"
+                            min="0.01"
+                            max={factura.saldo_pendiente}
                             step="0.01"
                             value={montoPagado}
-                            onChange={e => setMontoPagado(e.target.value)}
+                            onChange={(e) => setMontoPagado(e.target.value)}
                             className="bg-input border border-secondary rounded-lg p-3"
                             required
                         />
                     </div>
-
                     <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium text-title">Fecha de Pago</label>
-                        <input
-                            type="date"
-                            value={fechaPago}
-                            onChange={(e) => setFechaPago(e.target.value)}
-                            className="bg-input border border-secondary rounded-lg p-3"
-                            required
-                        />
-                    </div>
-
-                    <div className="md:col-span-2 flex flex-col gap-2">
-                        <label className="text-sm font-medium text-title">Depositar en (Caja/Banco)</label>
+                        <label className="text-sm font-medium text-title">Método de pago</label>
                         <select
-                            value={idCuentaBanco}
-                            onChange={(e) => setIdCuentaBanco(e.target.value)}
-                            className="bg-input border border-secondary w-full rounded-lg p-3"
-                            required
+                            value={metodoPago}
+                            onChange={(e) => setMetodoPago(e.target.value)}
+                            className="bg-input border border-secondary rounded-lg p-3"
                         >
-                            <option value="">{isLoadingCuentas ? "Cargando..." : "Seleccione cuenta..."}</option>
-                            {cuentasDeEfectivo.map(c => (
-                                <option key={c.id_cuenta} value={c.id_cuenta}>{c.nombre}</option>
-                            ))}
+                            <option value="TRANSFERENCIA">Transferencia</option>
+                            <option value="EFECTIVO">Efectivo</option>
                         </select>
+                    </div>
+                    {metodoPago === "EFECTIVO" && (
+                        <div className="md:col-span-2 flex flex-col gap-2">
+                            <label className="text-sm font-medium text-title">Sesión de caja abierta</label>
+                            <select
+                                value={idSesion}
+                                onChange={(e) => setIdSesion(e.target.value)}
+                                disabled={isLoadingSesiones || sesiones.length === 0}
+                                className="bg-input border border-secondary rounded-lg p-3 disabled:opacity-70"
+                                required
+                            >
+                                <option value="">
+                                    {isLoadingSesiones ? "Cargando..." : "No hay sesiones abiertas en esta sucursal"}
+                                </option>
+                                {sesiones.map((sesion) => (
+                                    <option key={sesion.id_sesion} value={sesion.id_sesion}>
+                                        {sesion.nombre_caja} · Sesión {sesion.id_sesion}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    <div className="md:col-span-2 flex flex-col gap-2">
+                        <label className="text-sm font-medium text-title">Referencia (opcional)</label>
+                        <input
+                            type="text"
+                            maxLength="120"
+                            value={referencia}
+                            onChange={(e) => setReferencia(e.target.value)}
+                            className="bg-input border border-secondary rounded-lg p-3"
+                        />
                     </div>
                 </div>
 
                 <div className="flex justify-end gap-4 mt-8">
-                    <button type="button" onClick={onClose} className="cursor-pointer bg-secondary text-button-text border border-secondary font-semibold py-2 px-6 rounded-lg hover:bg-button-cancel transition-transform duration-200 ease-in-out hover:scale-110">Cancelar</button>
+                    <button type="button" onClick={onClose} className="cursor-pointer bg-secondary text-button-text border border-secondary font-semibold py-2 px-6 rounded-lg">
+                        Cancelar
+                    </button>
                     <button
                         type="submit"
-                        disabled={isSaving || isLoadingCuentas}
-                        className="cursor-pointer bg-button text-button font-semibold py-2 px-2 rounded-lg hover:bg-[#E8E8E8] transition-transform duration-200 ease-in-out hover:scale-110 flex flex-row gap-2 items-center disabled:opacity-70"
+                        disabled={isSaving || isLoadingSesiones || (metodoPago === "EFECTIVO" && sesiones.length === 0)}
+                        className="cursor-pointer bg-button text-button font-semibold py-2 px-3 rounded-lg flex flex-row gap-2 items-center disabled:opacity-70"
                     >
                         <Save />
                         {isSaving ? "Guardando..." : "Guardar Pago"}

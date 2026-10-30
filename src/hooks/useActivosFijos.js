@@ -2,89 +2,100 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "react-hot-toast";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
+import { useAuth } from "../contexts/authcontext";
 
-const TABLA = 'activos_fijos';
+const CUENTAS_ACTIVO_FIJO = new Set(["1.2.01", "1.2.02", "1.2.03"]);
+const CUENTAS_DEPRECIACION = new Set(["1.3.01", "1.3.02"]);
+const CUENTA_GASTO_DEPRECIACION = "6.5.01";
 
 export function useActivosFijos() {
     const { empresaId } = useEmpresa();
+    const { perfil } = useAuth();
     const [activosFijos, setActivosFijos] = useState([]);
-    
-    // Listas para los Dropdowns
-    const [cuentasActivoFijo, setCuentasActivoFijo] = useState([]); 
-    const [cuentasGasto, setCuentasGasto] = useState([]); 
-    const [cuentasPago, setCuentasPago] = useState([]); 
-
+    const [cuentasActivoFijo, setCuentasActivoFijo] = useState([]);
+    const [cuentasDepreciacionAcumulada, setCuentasDepreciacionAcumulada] = useState([]);
+    const [cuentasGasto, setCuentasGasto] = useState([]);
+    const [cuentasPago, setCuentasPago] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState(null);
 
-    // 1. Cargar Activos Fijos (Tabla Principal)
     const fetchActivosFijos = useCallback(async () => {
-        if (!empresaId) return;
+        if (!empresaId) {
+            setActivosFijos([]);
+            return;
+        }
         setIsLoading(true);
+        setError(null);
         try {
-            const { data, error } = await supabase
-                .from(TABLA)
-                .select(`
-                    *, 
-                    cuentas_empresa:id_cuenta_activo ( nombre, codigo )
-                `)
-                .eq('id_empresa', empresaId)
-                .order('nombre', { ascending: true });
+            const { data: activos, error: activosError } = await supabase
+                .from("activos_fijos")
+                .select("*")
+                .eq("id_empresa", empresaId)
+                .order("nombre", { ascending: true });
+            if (activosError) throw activosError;
 
-            if (error) throw error;
-            setActivosFijos(data || []);
-        } catch (err) {
-            console.error("Error al cargar activos fijos:", err.message);
-            setError(err.message);
+            const accountIds = [...new Set((activos || []).flatMap((activo) => [
+                activo.id_cuenta_activo,
+                activo.id_cuenta_depreciacion_acumulada,
+                activo.id_cuenta_gasto_depreciacion,
+            ]))];
+            let cuentas = [];
+            if (accountIds.length) {
+                const { data, error: cuentasError } = await supabase
+                    .from("cuentas_contables")
+                    .select("id_cuenta, codigo, nombre")
+                    .eq("id_empresa", empresaId)
+                    .in("id_cuenta", accountIds);
+                if (cuentasError) throw cuentasError;
+                cuentas = data || [];
+            }
+            const cuentasPorId = new Map(cuentas.map((cuenta) => [cuenta.id_cuenta, cuenta]));
+            setActivosFijos((activos || []).map((activo) => ({
+                ...activo,
+                cuenta_activo: cuentasPorId.get(activo.id_cuenta_activo) || null,
+            })));
+        } catch (fetchError) {
+            console.error("Error al cargar activos fijos:", fetchError.message);
+            setError(fetchError.message);
+            toast.error(`Error al cargar activos fijos: ${fetchError.message}`);
         } finally {
             setIsLoading(false);
         }
     }, [empresaId]);
 
-    // 2. Cargar Catálogos (LA CORRECCIÓN)
     const fetchCatalogos = useCallback(async () => {
-        if (!empresaId) return;
-        try {
-            // Traemos TODAS las cuentas con sus relaciones
-            // tipo_cuenta y subtipo_cuenta deben coincidir con los nombres de tus tablas de catálogo
-            const { data: todasLasCuentas, error } = await supabase
-                .from('cuentas_empresa')
-                .select(`
-                    *,
-                    tipo_cuenta:id_tipo ( nombre ),
-                    subtipo_cuenta:id_subtipo ( nombre )
-                `)
-                .eq('id_empresa', empresaId);
-
-            if (error) throw error;
-
-            if (todasLasCuentas) {
-                // A. Filtrar Activos No Corrientes (Para el activo fijo)
-                const activos = todasLasCuentas.filter(c => 
-                    c.tipo_cuenta?.nombre === 'Activo' && 
-                    c.subtipo_cuenta?.nombre?.includes('No Corriente')
-                );
-                setCuentasActivoFijo(activos);
-
-                // B. Filtrar Gastos (Para la depreciación)
-                const gastos = todasLasCuentas.filter(c => 
-                    c.tipo_cuenta?.nombre === 'Gasto'
-                );
-                setCuentasGasto(gastos);
-
-                // C. Filtrar Efectivo (Para pagar) -> Buscamos "Caja" o "Banco" en el nombre
-                const pagos = todasLasCuentas.filter(c => 
-                    c.tipo_cuenta?.nombre === 'Activo' && 
-                    (c.nombre.toLowerCase().includes('caja') || c.nombre.toLowerCase().includes('banco'))
-                );
-                setCuentasPago(pagos);
-            }
-
-        } catch (err) {
-            console.error("Error al cargar catálogos:", err.message);
-            // toast.error("Error cargando cuentas contables");
+        if (!empresaId) {
+            setCuentasActivoFijo([]);
+            setCuentasDepreciacionAcumulada([]);
+            setCuentasGasto([]);
+            setCuentasPago([]);
+            return;
         }
+        const { data, error: cuentasError } = await supabase
+            .from("cuentas_contables")
+            .select("id_cuenta, codigo, nombre, naturaleza, es_efectivo, es_banco")
+            .eq("id_empresa", empresaId)
+            .eq("activa", true)
+            .eq("es_grupo", false)
+            .eq("permite_movimientos", true)
+            .order("codigo", { ascending: true });
+        if (cuentasError) {
+            console.error("Error al cargar cuentas para activos fijos:", cuentasError.message);
+            setError(cuentasError.message);
+            toast.error(`Error al cargar cuentas contables: ${cuentasError.message}`);
+            return;
+        }
+
+        const cuentas = data || [];
+        setCuentasActivoFijo(cuentas.filter((cuenta) => CUENTAS_ACTIVO_FIJO.has(cuenta.codigo)));
+        setCuentasDepreciacionAcumulada(cuentas.filter((cuenta) => CUENTAS_DEPRECIACION.has(cuenta.codigo)));
+        setCuentasGasto(cuentas.filter((cuenta) =>
+            cuenta.codigo === CUENTA_GASTO_DEPRECIACION
+        ));
+        setCuentasPago(cuentas.filter((cuenta) =>
+            cuenta.es_efectivo || cuenta.es_banco
+        ));
     }, [empresaId]);
 
     useEffect(() => {
@@ -92,70 +103,55 @@ export function useActivosFijos() {
         fetchCatalogos();
     }, [fetchActivosFijos, fetchCatalogos]);
 
-
-    // 3. Guardar Nuevo Activo (IGUAL QUE ANTES)
     const addActivoFijo = async (nuevoActivo) => {
-        if (!empresaId) return { success: false, message: "No hay empresa seleccionada." };
-
+        if (!empresaId || !nuevoActivo.id_sucursal) {
+            return { success: false, message: "Selecciona una sucursal activa." };
+        }
+        if (!perfil?.id || !nuevoActivo.clave_idempotencia) {
+            return { success: false, message: "No se pudo validar la sesión para registrar el activo." };
+        }
         if (!nuevoActivo.id_cuenta_pago) {
             return { success: false, message: "Debes seleccionar la cuenta de pago (Caja o Banco)." };
         }
 
         setIsSaving(true);
         setError(null);
-
         try {
-            const { id_cuenta_pago, ...activoParaInsertar } = nuevoActivo;
-
-            const activoData = {
-                ...activoParaInsertar,
-                id_empresa: empresaId
-            };
-
-            const { data, error } = await supabase
-                .from(TABLA)
-                .insert(activoData)
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            const movimientos = [
+            const codigoCategoria = `AF-${nuevoActivo.codigo}`.replace(/[^A-Z0-9_-]/gi, "").slice(0, 40);
+            const { data, error: adquisicionError } = await supabase.rpc(
+                "registrar_activo_fijo_con_categoria",
                 {
-                    id_empresa: empresaId,
-                    id_cuenta: nuevoActivo.id_cuenta_activo,
-                    fecha: nuevoActivo.fecha_compra,
-                    tipo: 'DEBE',
-                    monto: Number(nuevoActivo.valor_compra),
-                    descripcion: `Compra de activo fijo: ${nuevoActivo.nombre}`
-                },
-                {
-                    id_empresa: empresaId,
-                    id_cuenta: id_cuenta_pago,
-                    fecha: nuevoActivo.fecha_compra,
-                    tipo: 'HABER',
-                    monto: Number(nuevoActivo.valor_compra),
-                    descripcion: `Pago por compra de activo: ${nuevoActivo.nombre}`
+                    p_id_empresa: empresaId,
+                    p_codigo_categoria: codigoCategoria,
+                    p_nombre_categoria: nuevoActivo.nombre,
+                    p_vida_util_meses: nuevoActivo.vida_util_meses,
+                    p_id_cuenta_activo: nuevoActivo.id_cuenta_activo,
+                    p_id_cuenta_depreciacion_acumulada: nuevoActivo.id_cuenta_depreciacion_acumulada,
+                    p_id_cuenta_gasto_depreciacion: nuevoActivo.id_cuenta_gasto_depreciacion,
+                    p_id_sucursal: Number(nuevoActivo.id_sucursal),
+                    p_codigo: nuevoActivo.codigo,
+                    p_nombre: nuevoActivo.nombre,
+                    p_descripcion: nuevoActivo.descripcion || null,
+                    p_numero_serie: nuevoActivo.numero_serie || null,
+                    p_fecha_adquisicion: nuevoActivo.fecha_compra,
+                    p_fecha_puesta_en_servicio: nuevoActivo.fecha_compra,
+                    p_costo_adquisicion: Number(nuevoActivo.valor_compra),
+                    p_valor_residual: Number(nuevoActivo.valor_residual || 0),
+                    p_id_cuenta_contrapartida: Number(nuevoActivo.id_cuenta_pago),
+                    p_ubicacion: nuevoActivo.ubicacion || null,
+                    p_responsable: nuevoActivo.responsable || null,
+                    p_clave_idempotencia: nuevoActivo.clave_idempotencia,
                 }
-            ];
+            );
+            if (adquisicionError) throw adquisicionError;
 
-            const { error: errorMovimiento } = await supabase
-                .from('movimiento')
-                .insert(movimientos);
-
-            if (errorMovimiento) {
-                console.error("Error asiento:", errorMovimiento);
-                toast.error("Activo guardado, pero falló el registro contable.");
-            } else {
-                toast.success("Activo y asiento contable registrados.");
-            }
-
+            toast.success("Activo fijo y asiento contable registrados.");
             await fetchActivosFijos();
-            return { success: true, data: data };
-
-        } catch (err) {
-            console.error("Error al agregar activo fijo:", err.message);
-            return { success: false, message: err.message }; 
+            return { success: true, data };
+        } catch (saveError) {
+            console.error("Error al agregar activo fijo:", saveError.message);
+            setError(saveError.message);
+            return { success: false, message: saveError.message };
         } finally {
             setIsSaving(false);
         }
@@ -164,12 +160,13 @@ export function useActivosFijos() {
     return {
         activosFijos,
         cuentasActivoFijo,
+        cuentasDepreciacionAcumulada,
         cuentasGasto,
         cuentasPago,
         isLoading,
         isSaving,
         error,
         addActivoFijo,
-        fetchActivosFijos
+        fetchActivosFijos,
     };
 }

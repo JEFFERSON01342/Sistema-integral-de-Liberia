@@ -6,12 +6,13 @@ import { registrarAuditoria } from "../utils/auditoria";
 import StatsCards from "../components/statscards";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
+import { useEmpresa } from "../contexts/empresacontext";
 
-const EMPRESA_ID = 1;
 const TURNOS = ["Mañana", "Tarde", "Completo"];
 
 export default function AsignacionCajas() {
   const { perfil, rol } = useAuth();
+  const { empresaId } = useEmpresa();
   const esSuperadmin = rol === "superadmin";
 
   const [isLoading, setIsLoading] = useState(true);
@@ -24,7 +25,7 @@ export default function AsignacionCajas() {
 
   // Modal de asignación
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ id_terminal: "", id_cajero: "", turno: "Completo" });
+  const [form, setForm] = useState({ id_caja: "", id_cajero: "", turno: "Completo" });
   const [guardando, setGuardando] = useState(false);
 
   // Para admin/gerente la sucursal queda fijada a la del perfil.
@@ -33,37 +34,68 @@ export default function AsignacionCajas() {
   }, [esSuperadmin, perfil]);
 
   const cargarSucursales = useCallback(async () => {
-    let q = supabase.from("sucursales").select("id, nombre").eq("id_empresa", EMPRESA_ID).eq("estado", true).order("id");
-    if (!esSuperadmin && perfil?.id_sucursal) q = q.eq("id", perfil.id_sucursal);
-    const { data } = await q;
+    let q = supabase
+      .from("sucursales")
+      .select("id_sucursal, nombre")
+      .eq("id_empresa", empresaId)
+      .eq("activa", true)
+      .order("id_sucursal");
+    if (!esSuperadmin && perfil?.id_sucursal) q = q.eq("id_sucursal", perfil.id_sucursal);
+    const { data, error } = await q;
+    if (error) {
+      toast.error(`No se pudieron cargar las sucursales: ${error.message}`);
+      setSucursales([]);
+      return;
+    }
     setSucursales(data || []);
     // Si el superadmin aún no ha elegido, tomamos la primera.
-    if (esSuperadmin && !sucursalSel && (data || []).length) setSucursalSel(data[0].id);
-  }, [esSuperadmin, perfil, sucursalSel]);
+    if (esSuperadmin && !sucursalSel && (data || []).length) setSucursalSel(data[0].id_sucursal);
+  }, [empresaId, esSuperadmin, perfil, sucursalSel]);
 
   const cargar = useCallback(async () => {
     if (!sucursalSel) return;
     setIsLoading(true);
 
-    const [{ data: term }, { data: asig }, { data: abiertas }, { data: emps }] = await Promise.all([
-      supabase.from("terminales_pos").select("id, nombre, numero_serie, id_sucursal, estado")
-        .eq("id_empresa", EMPRESA_ID).eq("id_sucursal", sucursalSel).order("id"),
+    const [terminalesResult, asignacionesResult, sesionesResult, empleadosResult] = await Promise.all([
+      supabase.from("cajas").select("id_caja, nombre, codigo, numero_serie, id_sucursal, activa")
+        .eq("id_empresa", empresaId).eq("id_sucursal", sucursalSel).eq("activa", true).order("id_caja"),
       supabase.from("asignaciones_caja")
-        .select("id, id_terminal, id_cajero, turno, activo, id_sucursal")
+        .select("id, id_caja, id_cajero, turno, activo, id_sucursal")
         .eq("id_sucursal", sucursalSel).eq("activo", true),
-      supabase.from("apertura_caja").select("id, id_terminal, id_cajero, estado")
-        .eq("id_empresa", EMPRESA_ID).eq("id_sucursal", sucursalSel).eq("estado", "abierta"),
+      supabase.from("sesiones_caja").select("id_sesion, id_caja, abierta_por, estado")
+        .eq("id_empresa", empresaId).eq("id_sucursal", sucursalSel).eq("estado", "ABIERTA"),
       supabase.from("perfiles").select("id, nombre_completo, rol")
-        .eq("id_empresa", EMPRESA_ID).eq("id_sucursal", sucursalSel)
+        .eq("id_empresa", empresaId).eq("id_sucursal", sucursalSel)
         .eq("rol", "cajero").eq("activo", true).order("nombre_completo"),
     ]);
+    const results = [terminalesResult, asignacionesResult, sesionesResult, empleadosResult];
+    const errorResult = results.find((result) => result.error);
+    if (errorResult) {
+      toast.error(`No se pudieron cargar las asignaciones de caja: ${errorResult.error.message}`);
+      setTerminales([]);
+      setAsignaciones([]);
+      setCajasAbiertas([]);
+      setEmpleados([]);
+      setIsLoading(false);
+      return;
+    }
+    const term = terminalesResult.data;
+    const asig = asignacionesResult.data;
+    const abiertas = sesionesResult.data;
+    const emps = empleadosResult.data;
 
     // Nombres de empleados (incluye los asignados aunque no estén en la lista filtrada)
     const mapaNombres = {};
     (emps || []).forEach((e) => { mapaNombres[e.id] = e.nombre_completo; });
     const faltantes = (asig || []).map((a) => a.id_cajero).filter((id) => !mapaNombres[id]);
     if (faltantes.length) {
-      const { data: extra } = await supabase.from("perfiles").select("id, nombre_completo").in("id", faltantes);
+      const { data: extra, error: extraError } = await supabase
+        .from("perfiles")
+        .select("id, nombre_completo")
+        .in("id", faltantes);
+      if (extraError) {
+        toast.error(`No se pudieron cargar los nombres de cajeros asignados: ${extraError.message}`);
+      }
       (extra || []).forEach((e) => { mapaNombres[e.id] = e.nombre_completo; });
     }
 
@@ -72,46 +104,35 @@ export default function AsignacionCajas() {
     setCajasAbiertas(abiertas || []);
     setEmpleados(emps || []);
     setIsLoading(false);
-  }, [sucursalSel]);
+  }, [empresaId, sucursalSel]);
 
   useEffect(() => { cargarSucursales(); }, [cargarSucursales]);
   useEffect(() => { cargar(); }, [cargar]);
 
   // Helpers por terminal
-  const asignacionDe = (idTerminal) => asignaciones.find((a) => a.id_terminal === idTerminal) || null;
-  const estaEnUso = (idTerminal) => cajasAbiertas.some((c) => c.id_terminal === idTerminal);
+  const asignacionDe = (idCaja) => asignaciones.find((a) => a.id_caja === idCaja) || null;
+  const estaEnUso = (idCaja) => cajasAbiertas.some((sesion) => sesion.id_caja === idCaja);
 
   const abrirModal = (idTerminal = "") => {
-    setForm({ id_terminal: idTerminal ? String(idTerminal) : "", id_cajero: "", turno: "Completo" });
+    setForm({ id_caja: idTerminal ? String(idTerminal) : "", id_cajero: "", turno: "Completo" });
     setModal(true);
   };
 
   const guardar = async (e) => {
     e.preventDefault();
-    if (!form.id_terminal) return toast.error("Seleccione una caja (POS).");
+    if (!form.id_caja) return toast.error("Seleccione una caja (POS).");
     if (!form.id_cajero) return toast.error("Seleccione un empleado.");
 
     setGuardando(true);
-    // Si ya existe una asignación activa para esa terminal+turno, la desactivamos (reasignación).
-    const previa = asignaciones.find(
-      (a) => a.id_terminal === Number(form.id_terminal) && a.turno === form.turno
-    );
-    if (previa) {
-      const { error: eDes } = await supabase.from("asignaciones_caja").update({ activo: false }).eq("id", previa.id);
-      if (eDes) { setGuardando(false); return toast.error("Error reasignando: " + eDes.message); }
-    }
-
-    const { error } = await supabase.from("asignaciones_caja").insert([{
-      id_sucursal: Number(sucursalSel),
-      id_terminal: Number(form.id_terminal),
-      id_cajero: form.id_cajero,
-      turno: form.turno,
-      activo: true,
-    }]);
+    const { error } = await supabase.rpc("asignar_caja_cajero", {
+      p_id_caja: Number(form.id_caja),
+      p_id_cajero: form.id_cajero,
+      p_turno: form.turno,
+    });
     setGuardando(false);
     if (error) return toast.error("Error al asignar: " + error.message);
 
-    const term = terminales.find((t) => t.id === Number(form.id_terminal));
+    const term = terminales.find((t) => t.id_caja === Number(form.id_caja));
     const emp = empleados.find((p) => p.id === form.id_cajero);
     await registrarAuditoria(supabase, perfil, "ASIGNAR_CAJA", "Asignación de Cajas",
       `Asignó ${term?.nombre || "caja"} a ${emp?.nombre_completo || "empleado"} (turno ${form.turno})`);
@@ -142,8 +163,6 @@ export default function AsignacionCajas() {
     cargar();
   };
 
-  const terminalesSinAsignar = terminales.filter((t) => !asignacionDe(t.id));
-
   return (
     <div>
       <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -160,7 +179,7 @@ export default function AsignacionCajas() {
               onChange={(e) => setSucursalSel(e.target.value ? Number(e.target.value) : null)}
               className="bg-input border border-secondary rounded-lg p-2.5 text-title"
             >
-              {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              {sucursales.map((sucursal) => <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>)}
             </select>
           )}
           <button onClick={() => abrirModal()} className="bg-button text-button flex items-center gap-2 h-11 px-4 rounded-xl hover:scale-105 transition font-semibold">
@@ -198,10 +217,10 @@ export default function AsignacionCajas() {
               </thead>
               <tbody>
                 {terminales.map((t) => {
-                  const a = asignacionDe(t.id);
-                  const enUso = estaEnUso(t.id);
+                  const a = asignacionDe(t.id_caja);
+                  const enUso = estaEnUso(t.id_caja);
                   return (
-                    <tr key={t.id} className="border-t border-secondary text-sm hover:bg-secondary transition-colors">
+                    <tr key={t.id_caja} className="border-t border-secondary text-sm hover:bg-secondary transition-colors">
                       <td className="py-3 px-2 font-medium">{t.nombre}</td>
                       <td className="py-3 px-2 text-subtitle">{t.numero_serie || "—"}</td>
                       <td className="py-3 px-2">{a ? a.cajero_nombre : <span className="text-subtitle italic">Sin asignar</span>}</td>
@@ -217,11 +236,11 @@ export default function AsignacionCajas() {
                       </td>
                       <td className="py-3 px-2">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => abrirModal(t.id)} title={a ? "Reasignar" : "Asignar"} className="p-2 rounded-lg bg-secondary hover:bg-button hover:text-button transition">
+                          <button onClick={() => abrirModal(t.id_caja)} title={a ? "Reasignar" : "Asignar"} disabled={enUso} className="p-2 rounded-lg bg-secondary hover:bg-button hover:text-button transition disabled:opacity-40 disabled:cursor-not-allowed">
                             <UserPlus size={16} />
                           </button>
                           {a && (
-                            <button onClick={() => quitarAsignacion(a)} title="Quitar asignación" className="p-2 rounded-lg bg-secondary hover:bg-red-600 hover:text-white transition">
+                            <button onClick={() => quitarAsignacion(a)} title="Quitar asignación" disabled={enUso} className="p-2 rounded-lg bg-secondary hover:bg-red-600 hover:text-white transition disabled:opacity-40 disabled:cursor-not-allowed">
                               <Power size={16} />
                             </button>
                           )}
@@ -248,11 +267,11 @@ export default function AsignacionCajas() {
             <form onSubmit={guardar} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Caja (POS) *</label>
-                <select value={form.id_terminal} onChange={(e) => setForm({ ...form, id_terminal: e.target.value })} className="bg-input border border-secondary rounded-lg p-3">
+                <select value={form.id_caja} onChange={(e) => setForm({ ...form, id_caja: e.target.value })} className="bg-input border border-secondary rounded-lg p-3">
                   <option value="">Seleccione una caja</option>
                   {terminales.map((t) => {
-                    const a = asignacionDe(t.id);
-                    return <option key={t.id} value={t.id}>{t.nombre}{a ? ` — asignada a ${a.cajero_nombre}` : " — libre"}</option>;
+                    const a = asignacionDe(t.id_caja);
+                    return <option key={t.id_caja} value={t.id_caja}>{t.nombre}{a ? ` — asignada a ${a.cajero_nombre}` : " — libre"}</option>;
                   })}
                 </select>
               </div>

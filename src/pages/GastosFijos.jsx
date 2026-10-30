@@ -13,7 +13,7 @@ export default function GastosFijos() {
     const [isPagoModalOpen, setIsPagoModalOpen] = useState(false);
     const [gastoSeleccionado, setGastoSeleccionado] = useState(null);
 
-    const { gastosFijos, isLoading, isSaving } = useGastosFijos();
+    const { gastosFijos, isLoading, isSaving, fetchGastosFijos } = useGastosFijos();
 
     const { totalGastos, montoTotal } = useMemo(() => {
         const monto = gastosFijos.reduce((sum, g) => sum + (g.monto_estimado || 0), 0);
@@ -73,7 +73,7 @@ export default function GastosFijos() {
                                     <tr key={g.id_gasto_fijo} className="border-t border-secondary text-sm hover:bg-secondary/10">
                                         <td className="py-3 px-2 text-center font-medium">{g.descripcion}</td>
                                         <td className="py-3 px-2 text-center">C$ {g.monto_estimado.toFixed(2)}</td>
-                                        <td className="py-3 px-2 text-center text-subtitle">{g.cuentas_empresa.nombre}</td>
+                                        <td className="py-3 px-2 text-center text-subtitle">{g.cuenta_gasto?.nombre || "—"}</td>
                                         <td className="py-3 px-2 text-center text-subtitle">
                                             {g.fecha_ultimo_registro ? format(new Date(g.fecha_ultimo_registro), 'dd/MM/yyyy') : 'Nunca'}
                                         </td>
@@ -98,7 +98,10 @@ export default function GastosFijos() {
             {isNuevoModalOpen && (
                 <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
                     <div className="relative z-10 mx-4">
-                        <NuevoGastoFijo onClose={() => setIsNuevoModalOpen(false)} />
+                        <NuevoGastoFijo onClose={() => {
+                            setIsNuevoModalOpen(false);
+                            fetchGastosFijos();
+                        }} />
                     </div>
                 </div>
             )}
@@ -108,7 +111,10 @@ export default function GastosFijos() {
                     <div className="relative z-10 mx-4">
                         <RegistrarPagoGastoFijo
                             gasto={gastoSeleccionado}
-                            onClose={() => setIsPagoModalOpen(false)}
+                            onClose={() => {
+                                setIsPagoModalOpen(false);
+                                fetchGastosFijos();
+                            }}
                         />
                     </div>
                 </div>

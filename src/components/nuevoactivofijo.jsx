@@ -1,46 +1,51 @@
-import { Plus, Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Save } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from "react-hot-toast"
 import { useActivosFijos } from "../hooks/useActivosFijos";
 import { useEmpleados } from "../hooks/useEmpleados";
+import { useSucursalesOperativas } from "../hooks/useSucursalesOperativas";
+import { useAuth } from "../contexts/authcontext";
 
-export default function NuevoActivoFijo({ onClose, totalActivos }) {
+export default function NuevoActivoFijo({ onClose }) {
     const { empleados, isLoading: isLoadingEmpleados } = useEmpleados();
+    const { rol } = useAuth();
+    const { sucursales, sucursalId, setSucursalId, isLoading: isLoadingSucursales } = useSucursalesOperativas();
     const { 
         addActivoFijo, 
         cuentasActivoFijo, // Para el tipo de activo
+        cuentasDepreciacionAcumulada,
         cuentasGasto,      // Para la depreciación
         cuentasPago,       // Para pagar
         isSaving 
     } = useActivosFijos();
     const [idCuentaPago, setIdCuentaPago] = useState("");
     const [idCuentaActivo, setIdCuentaActivo] = useState('');
-    const [codigo, setCodigo] = useState('');
+    const [codigo] = useState(() => `AF-${crypto.randomUUID().slice(0, 8).toUpperCase()}`);
     const [nombre, setNombre] = useState('');
     const [descripcion, setDescripcion] = useState('');
     const [fechaCompra, setFechaCompra] = useState('');
     const [valorCompra, setValorCompra] = useState(0);
     const [vidaUtil, setVidaUtil] = useState(10);
-    const [metodoDepreciacion, setMetodoDepreciacion] = useState('Linea Recta');
     const [ubicacion, setUbicacion] = useState('');
     const [responsable, setResponsable] = useState('');
-    const [estado, setEstado] = useState('Activo');
     const [valorResidual, setValorResidual] = useState(0);
     const [idCuentaGasto, setIdCuentaGasto] = useState('');
     const [idCuentaDepAcum, setIdCuentaDepAcum] = useState('');
-
-    useEffect(() => {
-        const nuevoNumero = (totalActivos || 0) + 1;
-        const codigoGenerado = `AF-${String(nuevoNumero).padStart(3, '0')}`;
-        setCodigo(codigoGenerado);
-
-    }, [totalActivos]);
+    const [claveIdempotencia] = useState(() => crypto.randomUUID());
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        if (!nombre || !fechaCompra || !(valorCompra > 0) || !idCuentaActivo || !idCuentaGasto || !idCuentaDepAcum) {
+        if (!sucursalId || !nombre || !fechaCompra || !(Number(valorCompra) > 0) || !idCuentaActivo || !idCuentaGasto || !idCuentaDepAcum || !idCuentaPago) {
             toast.error("Por favor, complete todos los campos (Nombre, Fecha, Valor y Cuentas Contables).");
+            return;
+        }
+        if (Number(valorResidual) < 0 || Number(valorResidual) >= Number(valorCompra)) {
+            toast.error("El valor residual debe ser menor que el valor de compra.");
+            return;
+        }
+        if (!Number.isInteger(Number(vidaUtil)) || Number(vidaUtil) < 1) {
+            toast.error("La vida útil debe ser un número entero de años mayor que cero.");
             return;
         }
 
@@ -48,18 +53,18 @@ export default function NuevoActivoFijo({ onClose, totalActivos }) {
             codigo,
             nombre,
             descripcion,
+            id_sucursal: Number(sucursalId),
             id_cuenta_activo: Number(idCuentaActivo),
             fecha_compra: fechaCompra,
             valor_compra: Number(valorCompra),
-            vida_util_anios: Number(vidaUtil),
-            metodo_depreciacion: metodoDepreciacion,
+            vida_util_meses: Number(vidaUtil) * 12,
             ubicacion,
             responsable: responsable,
-            estado,
             valor_residual: Number(valorResidual),
             id_cuenta_gasto_depreciacion: Number(idCuentaGasto),
             id_cuenta_depreciacion_acumulada: Number(idCuentaDepAcum),
-            id_cuenta_pago: Number(idCuentaPago)
+            id_cuenta_pago: Number(idCuentaPago),
+            clave_idempotencia: claveIdempotencia,
         };
 
         const result = await addActivoFijo(nuevoActivo);
@@ -83,7 +88,23 @@ export default function NuevoActivoFijo({ onClose, totalActivos }) {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6 overflow-y-auto max-h-[70vh] pr-4">
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium text-title">Código</label>
-                            <input type="text" readOnly value={codigo} onChange={(e) => setCodigo(e.target.value)} className="bg-input border border-secondary rounded-lg p-3 opacity-70" />
+                            <input type="text" readOnly value={codigo} className="bg-input border border-secondary rounded-lg p-3 opacity-70" />
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-title">Sucursal</label>
+                            <select
+                                value={sucursalId}
+                                onChange={(e) => setSucursalId(e.target.value)}
+                                disabled={isLoadingSucursales || rol !== "superadmin"}
+                                className="bg-input border border-secondary rounded-lg p-3 disabled:opacity-70"
+                                required
+                            >
+                                <option value="">{isLoadingSucursales ? "Cargando..." : "Seleccione una sucursal"}</option>
+                                {sucursales.map((sucursal) => (
+                                    <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="flex flex-col gap-2">
@@ -143,8 +164,7 @@ export default function NuevoActivoFijo({ onClose, totalActivos }) {
                             <label className="text-sm font-medium text-title">Cuenta de Deprec. Acumulada</label>
                             <select value={idCuentaDepAcum} onChange={e => setIdCuentaDepAcum(e.target.value)} className="bg-input border border-secondary rounded-lg p-3" required>
                                 <option value="">Seleccione cuenta de depreciación acumulada...</option>
-                                {/* Re-usamos 'cuentasActivo' porque la Dep. Acum. es una cuenta de Activo (Contra-Activo) */}
-                                {cuentasActivoFijo && cuentasActivoFijo.map(cuenta => (
+                                {cuentasDepreciacionAcumulada && cuentasDepreciacionAcumulada.map(cuenta => (
                                     <option key={cuenta.id_cuenta} value={cuenta.id_cuenta}>
                                         {cuenta.nombre}
                                     </option>
@@ -163,16 +183,19 @@ export default function NuevoActivoFijo({ onClose, totalActivos }) {
                         </div>
 
                         <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-title">Valor Residual</label>
+                            <input type="number" min="0" step="0.01" value={valorResidual} onChange={e => setValorResidual(e.target.value)} placeholder="0" className="bg-input border border-secondary rounded-lg p-3" />
+                        </div>
+
+                        <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium text-title">Vida Útil (años)</label>
-                            <input type="number" value={vidaUtil} onChange={e => setVidaUtil(e.target.value)} placeholder="10" className="bg-input border border-secondary rounded-lg p-3" />
+                            <input type="number" min="1" step="1" value={vidaUtil} onChange={e => setVidaUtil(e.target.value)} placeholder="10" className="bg-input border border-secondary rounded-lg p-3" />
                         </div>
 
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium text-title">Método de Depreciación</label>
-                            <select value={metodoDepreciacion} onChange={e => setMetodoDepreciacion(e.target.value)} className="bg-input border border-secondary rounded-lg p-3">
+                            <select value="Linea Recta" disabled className="bg-input border border-secondary rounded-lg p-3 disabled:opacity-70">
                                 <option value="Linea Recta">Línea Recta</option>
-                                <option value="Suma de dígitos">Suma de dígitos</option>
-                                <option value="Otro">Otro</option>
                             </select>
                         </div>
 
@@ -198,21 +221,13 @@ export default function NuevoActivoFijo({ onClose, totalActivos }) {
                             </select>
                         </div>
 
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium text-title">Estado</label>
-                            <select value={estado} onChange={e => setEstado(e.target.value)} className="bg-input border border-secondary rounded-lg p-3">
-                                <option value="Activo">Activo</option>
-                                <option value="En Mantenimiento">En Mantenimiento</option>
-                                <option value="De Baja">De Baja</option>
-                            </select>
-                        </div>
                     </div>
 
                     <div className="flex justify-end gap-4 mt-8">
                         <button type="button" onClick={onClose} className="cursor-pointer bg-secondary text-button-text border border-secondary font-semibold py-2 px-6 rounded-lg hover:bg-button-cancel transition-transform duration-200 ease-in-out hover:scale-110">Cancelar</button>
-                        <button type="submit" className="cursor-pointer bg-button text-button font-semibold py-2 px-2 rounded-lg hover:bg-[#E8E8E8] transition-transform duration-200 ease-in-out hover:scale-110 flex flex-row gap-2 items-center">
+                        <button type="submit" disabled={isSaving || isLoadingSucursales} className="cursor-pointer bg-button text-button font-semibold py-2 px-2 rounded-lg hover:bg-[#E8E8E8] transition-transform duration-200 ease-in-out hover:scale-110 flex flex-row gap-2 items-center disabled:opacity-60">
                             <Save />
-                            Guardar
+                            {isSaving ? "Guardando..." : "Guardar"}
                         </button>
                     </div>
                 </form>

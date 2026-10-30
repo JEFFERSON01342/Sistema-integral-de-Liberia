@@ -3,35 +3,41 @@ import { Save } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from "react-hot-toast";
 import { useGastosFijos } from '../hooks/useGastosFijos';
-import { useCuentas } from '../hooks/useCuentas';
+import { useCuentasContables } from '../hooks/useCuentasContables';
+import { useSucursalesOperativas } from '../hooks/useSucursalesOperativas';
+import { useAuth } from '../contexts/authcontext';
 
 export default function RegistrarPagoGastoFijo({ onClose, gasto }) {
     const { registrarPagoGastoFijo, isSaving } = useGastosFijos();
-    const { catalogoCuentas, isLoading: isLoadingCuentas } = useCuentas();
+    const { cuentas, isLoading: isLoadingCuentas } = useCuentasContables();
+    const { perfil, rol } = useAuth();
+    const { sucursales, sucursalId, setSucursalId, isLoading: isLoadingSucursales } = useSucursalesOperativas();
 
-    // Estados del formulario
     const [montoReal, setMontoReal] = useState(gasto.monto_estimado.toFixed(2));
     const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
     const [idCuentaPago, setIdCuentaPago] = useState('');
+    const [claveIdempotencia] = useState(() => crypto.randomUUID());
 
-    // Filtra solo las cuentas de Activo (Caja/Bancos) para PAGAR
     const cuentasDeEfectivo = useMemo(() => {
-        if (!catalogoCuentas) return [];
-        return catalogoCuentas.filter(c => c.id_tipo === 1); // Asume ID 1 = Activo
-    }, [catalogoCuentas]);
+        return cuentas.filter((cuenta) =>
+            cuenta.naturaleza === "ACTIVO" && (cuenta.es_efectivo || cuenta.es_banco)
+        );
+    }, [cuentas]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!idCuentaPago || !montoReal || Number(montoReal) <= 0) {
-            toast.error("Seleccione una cuenta de pago y un monto válido.");
+        if (!idCuentaPago || !sucursalId || !montoReal || Number(montoReal) <= 0) {
+            toast.error("Seleccione una sucursal, una cuenta de pago y un monto válido.");
             return;
         }
 
         const pago = {
             id_gasto_fijo: gasto.id_gasto_fijo,
+            id_sucursal: Number(sucursalId),
             monto_real: Number(montoReal),
             fecha_pago: fechaPago,
-            id_cuenta_pago: Number(idCuentaPago)
+            id_cuenta_pago: Number(idCuentaPago),
+            clave_idempotencia: claveIdempotencia,
         };
 
         const { success } = await registrarPagoGastoFijo(pago);
@@ -45,7 +51,7 @@ export default function RegistrarPagoGastoFijo({ onClose, gasto }) {
             <h3 className="text-2xl font-semibold mb-6">Registrar Pago de Gasto</h3>
             <div className='mb-4 border border-secondary/30 rounded-lg p-3 text-sm'>
                 <p><strong>Gasto:</strong> {gasto.descripcion}</p>
-                <p><strong>Cuenta Afectada:</strong> {gasto.cuentas_empresa.nombre}</p>
+                <p><strong>Cuenta Afectada:</strong> {gasto.cuenta_gasto?.nombre || "—"}</p>
             </div>
 
             <form onSubmit={handleSubmit}>
@@ -57,7 +63,7 @@ export default function RegistrarPagoGastoFijo({ onClose, gasto }) {
                             step="0.01"
                             value={montoReal}
                             onChange={e => setMontoReal(e.target.value)}
-                            t className="bg-input border border-secondary rounded-lg p-3"
+                            className="bg-input border border-secondary rounded-lg p-3"
                             required
                         />
                     </div>
@@ -71,6 +77,21 @@ export default function RegistrarPagoGastoFijo({ onClose, gasto }) {
                             required
                         />
                     </div>
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm font-medium">Sucursal</label>
+                        <select
+                            value={sucursalId}
+                            onChange={(e) => setSucursalId(e.target.value)}
+                            disabled={isLoadingSucursales || rol !== "superadmin" || Boolean(perfil?.id_sucursal)}
+                            className="bg-input border border-secondary rounded-lg p-3 disabled:opacity-70"
+                            required
+                        >
+                            <option value="">{isLoadingSucursales ? "Cargando..." : "Seleccione sucursal..."}</option>
+                            {sucursales.map((sucursal) => (
+                                <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>
+                            ))}
+                        </select>
+                    </div>
 
                     <div className="flex flex-col gap-2">
                         <label className="text-sm font-medium">Pagar desde (Caja/Banco)</label>
@@ -81,8 +102,10 @@ export default function RegistrarPagoGastoFijo({ onClose, gasto }) {
                             required
                         >
                             <option value="">{isLoadingCuentas ? "Cargando..." : "Seleccione cuenta..."}</option>
-                            {cuentasDeEfectivo.map(c => (
-                                <option key={c.id_cuenta} value={c.id_cuenta}>{c.nombre}</option>
+                            {cuentasDeEfectivo.map((cuenta) => (
+                                <option key={cuenta.id_cuenta} value={cuenta.id_cuenta}>
+                                    {cuenta.codigo} · {cuenta.nombre}
+                                </option>
                             ))}
                         </select>
                     </div>
@@ -92,7 +115,7 @@ export default function RegistrarPagoGastoFijo({ onClose, gasto }) {
                     <button type="button" onClick={onClose} className="cursor-pointer bg-secondary text-button-text border border-secondary font-semibold py-2 px-6 rounded-lg hover:bg-button-cancel transition-transform duration-200 ease-in-out hover:scale-110">Cancelar</button>
                     <button
                         type="submit"
-                        disabled={isSaving || isLoadingCuentas}
+                        disabled={isSaving || isLoadingCuentas || isLoadingSucursales}
                         className="cursor-pointer bg-button text-button font-semibold py-2 px-2 rounded-lg hover:bg-[#E8E8E8] transition-transform duration-200 ease-in-out hover:scale-110 flex flex-row gap-2 items-center"
                     >
                         <Save />

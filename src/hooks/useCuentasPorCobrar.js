@@ -17,7 +17,11 @@ export function useCuentasPorCobrar() {
                 p_id_empresa: empresaId
             });
             if (error) throw error;
-            setFacturasPendientes(data || []);
+            setFacturasPendientes((data || []).map((factura) => ({
+                ...factura,
+                monto_total: Number(factura.monto_total),
+                saldo_pendiente: Number(factura.saldo_pendiente),
+            })));
         } catch (error) {
             toast.error(`Error al cargar CxC: ${error.message}`);
         } finally {
@@ -32,18 +36,19 @@ export function useCuentasPorCobrar() {
     const registrarPago = async (pago) => {
         setIsSaving(true);
         try {
-            const { data: nuevoSaldo, error } = await supabase.rpc('sp_registrar_pago_cliente', {
-                p_id_empresa: empresaId,
-                p_id_cliente: pago.id_cliente,
-                p_id_venta: pago.id_venta,
-                p_monto_pagado: pago.monto_pagado,
-                p_fecha_pago: pago.fecha_pago,
-                p_id_cuenta_banco: pago.id_cuenta_banco,
-                p_id_cuenta_cxc: pago.id_cuenta_cxc
+            const { data: idCobro, error } = await supabase.rpc('registrar_cobro_factura_empresa', {
+                p_metodo_pago: pago.metodo_pago,
+                p_asignaciones: [{
+                    id_factura: pago.id_factura,
+                    monto: pago.monto_pagado,
+                }],
+                p_clave_idempotencia: pago.clave_idempotencia,
+                p_id_sesion: pago.id_sesion || null,
+                p_referencia: pago.referencia || null,
             });
             if (error) throw error;
 
-            toast.success(`✅ Pago registrado. Nuevo saldo de factura: C$ ${nuevoSaldo.toFixed(2)}`);
+            toast.success(`Pago registrado correctamente (cobro #${idCobro}).`);
             await fetchFacturasPendientes();
             return { success: true };
         } catch (error) {

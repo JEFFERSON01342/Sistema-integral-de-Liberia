@@ -107,8 +107,8 @@ export default function Clientes() {
                                                     <td className="py-3 px-4 text-center">{f.numero_factura}</td>
                                                     <td className="py-3 px-4 text-center">{format(new Date(f.fecha_venta), 'dd/MM/yyyy')}</td>
                                                     <td className="py-3 px-4 text-center">{format(new Date(f.fecha_vencimiento), 'dd/MM/yyyy')}</td>
-                                                    <td className="py-3 px-4 text-center">C$ {f.monto_total ? f.monto_total.toFixed(2) : null}</td>
-                                                    <td className="py-3 px-4 text-center font-bold">C$ {f.saldo_pendiente.toFixed(2)}</td>
+                                                    <td className="py-3 px-4 text-center">C$ {Number(f.monto_total || 0).toFixed(2)}</td>
+                                                    <td className="py-3 px-4 text-center font-bold">C$ {Number(f.saldo_pendiente || 0).toFixed(2)}</td>
                                                     <td className="py-3 px-4 text-center">
                                                         <button
                                                             className="bg-green-600/20 text-white-400 px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-500/30"
@@ -143,7 +143,10 @@ export default function Clientes() {
                     <div className="relative z-10 mx-4">
                         <RegistrarPagoCliente
                             factura={facturaSeleccionada}
-                            onClose={() => setIsPagoModalOpen(false)}
+                            onClose={() => {
+                                setIsPagoModalOpen(false);
+                                fetchFacturasPendientes();
+                            }}
                         />
                     </div>
                 </div>

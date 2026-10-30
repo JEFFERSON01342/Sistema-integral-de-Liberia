@@ -6,11 +6,11 @@ import { registrarAuditoria } from "../utils/auditoria";
 import StatsCards from "../components/statscards";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
-
-const EMPRESA_ID = 1;
+import { useEmpresa } from "../contexts/empresacontext";
 
 export default function TerminalesPOS() {
   const { perfil } = useAuth();
+  const { empresaId } = useEmpresa();
   const [terminales, setTerminales] = useState([]);
   const [sucursales, setSucursales] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -20,18 +20,39 @@ export default function TerminalesPOS() {
 
   const cargar = useCallback(async () => {
     setIsLoading(true);
-    const [{ data: term }, { data: suc }] = await Promise.all([
-      supabase
-        .from("terminales_pos")
-        .select("*, sucursal:sucursales(nombre)")
-        .eq("id_empresa", EMPRESA_ID)
-        .order("id", { ascending: true }),
-      supabase.from("sucursales").select("id, nombre, estado").eq("id_empresa", EMPRESA_ID).eq("estado", true),
-    ]);
-    setTerminales(term || []);
-    setSucursales(suc || []);
-    setIsLoading(false);
-  }, []);
+    try {
+      const [{ data: cajas, error: cajasError }, { data: sucursalesData, error: sucursalesError }] = await Promise.all([
+        supabase
+          .from("cajas")
+          .select("id_caja, codigo, nombre, numero_serie, id_sucursal, activa")
+          .eq("id_empresa", empresaId)
+          .order("id_caja", { ascending: true }),
+        supabase
+          .from("sucursales")
+          .select("id_sucursal, nombre")
+          .eq("id_empresa", empresaId)
+          .eq("activa", true)
+          .order("id_sucursal", { ascending: true }),
+      ]);
+      if (cajasError) throw cajasError;
+      if (sucursalesError) throw sucursalesError;
+      const sucursalesPorId = new Map((sucursalesData || []).map((sucursal) => [
+        sucursal.id_sucursal,
+        sucursal.nombre,
+      ]));
+      setTerminales((cajas || []).map((caja) => ({
+        ...caja,
+        sucursal: { nombre: sucursalesPorId.get(caja.id_sucursal) || "—" },
+      })));
+      setSucursales(sucursalesData || []);
+    } catch (loadError) {
+      toast.error(`No se pudieron cargar las cajas POS: ${loadError.message}`);
+      setTerminales([]);
+      setSucursales([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [empresaId]);
 
   useEffect(() => {
     cargar();
@@ -45,7 +66,7 @@ export default function TerminalesPOS() {
 
   const abrirEditar = (t) => {
     setEditando(t);
-    setForm({ nombre: t.nombre || "", numero_serie: t.numero_serie || "", id_sucursal: t.id_sucursal || "" });
+    setForm({ nombre: t.nombre || "", numero_serie: t.numero_serie || "", id_sucursal: String(t.id_sucursal || "") });
     setIsModalOpen(true);
   };
 
@@ -53,18 +74,23 @@ export default function TerminalesPOS() {
     e.preventDefault();
     if (!form.nombre.trim()) return toast.error("El nombre es obligatorio.");
     if (!form.id_sucursal) return toast.error("Seleccione una sucursal.");
-    const payload = {
-      nombre: form.nombre,
-      numero_serie: form.numero_serie,
-      id_sucursal: Number(form.id_sucursal),
-    };
     if (editando) {
-      const { error } = await supabase.from("terminales_pos").update(payload).eq("id", editando.id);
+      const { error } = await supabase
+        .from("cajas")
+        .update({
+          nombre: form.nombre.trim(),
+          numero_serie: form.numero_serie.trim() || null,
+        })
+        .eq("id_caja", editando.id_caja);
       if (error) return toast.error("Error al actualizar: " + error.message);
       await registrarAuditoria(supabase, perfil, "EDITAR", "Terminales POS", `Editó terminal ${form.nombre}`);
       toast.success("Terminal actualizada.");
     } else {
-      const { error } = await supabase.from("terminales_pos").insert([{ ...payload, estado: true, id_empresa: EMPRESA_ID }]);
+      const { error } = await supabase.rpc("crear_caja_pos", {
+        p_id_sucursal: Number(form.id_sucursal),
+        p_nombre: form.nombre.trim(),
+        p_numero_serie: form.numero_serie.trim() || null,
+      });
       if (error) return toast.error("Error al crear: " + error.message);
       await registrarAuditoria(supabase, perfil, "CREAR", "Terminales POS", `Creó terminal ${form.nombre}`);
       toast.success("Terminal creada.");
@@ -74,7 +100,7 @@ export default function TerminalesPOS() {
   };
 
   const toggleEstado = async (t) => {
-    const nuevo = !t.estado;
+    const nuevo = !t.activa;
     const res = await Swal.fire({
       title: nuevo ? "¿Activar terminal?" : "¿Desactivar terminal?",
       text: t.nombre,
@@ -88,13 +114,13 @@ export default function TerminalesPOS() {
       cancelButtonText: "Cancelar",
     });
     if (!res.isConfirmed) return;
-    const { error } = await supabase.from("terminales_pos").update({ estado: nuevo }).eq("id", t.id);
+    const { error } = await supabase.from("cajas").update({ activa: nuevo }).eq("id_caja", t.id_caja);
     if (error) return toast.error("Error: " + error.message);
     await registrarAuditoria(supabase, perfil, nuevo ? "ACTIVAR" : "DESACTIVAR", "Terminales POS", `${nuevo ? "Activó" : "Desactivó"} terminal ${t.nombre}`);
     cargar();
   };
 
-  const activas = terminales.filter((t) => t.estado).length;
+  const activas = terminales.filter((t) => t.activa).length;
 
   return (
     <div>
@@ -134,20 +160,20 @@ export default function TerminalesPOS() {
               </thead>
               <tbody>
                 {terminales.map((t) => (
-                  <tr key={t.id} className="border-t border-secondary text-sm hover:bg-secondary transition-colors">
-                    <td className="py-3 px-2 text-center font-mono">{t.id}</td>
+                  <tr key={t.id_caja} className="border-t border-secondary text-sm hover:bg-secondary transition-colors">
+                    <td className="py-3 px-2 text-center font-mono">{t.codigo}</td>
                     <td className="py-3 px-2 font-medium">{t.nombre}</td>
                     <td className="py-3 px-2 text-subtitle font-mono">{t.numero_serie || "—"}</td>
                     <td className="py-3 px-2 text-subtitle">{t.sucursal?.nombre || "—"}</td>
                     <td className="py-3 px-2 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${t.estado ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
-                        {t.estado ? "Activa" : "Inactiva"}
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${t.activa ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
+                        {t.activa ? "Activa" : "Inactiva"}
                       </span>
                     </td>
                     <td className="py-3 px-2 text-center">
                       <div className="flex gap-3 justify-center">
                         <button onClick={() => abrirEditar(t)} className="text-blue-400 hover:text-blue-300" title="Editar"><Pencil size={18} /></button>
-                        <button onClick={() => toggleEstado(t)} className={t.estado ? "text-red-400 hover:text-red-300" : "text-green-400 hover:text-green-300"} title={t.estado ? "Desactivar" : "Activar"}><Power size={18} /></button>
+                        <button onClick={() => toggleEstado(t)} className={t.activa ? "text-red-400 hover:text-red-300" : "text-green-400 hover:text-green-300"} title={t.activa ? "Desactivar" : "Activar"}><Power size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -177,10 +203,10 @@ export default function TerminalesPOS() {
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">Sucursal *</label>
-                <select value={form.id_sucursal} onChange={(e) => setForm({ ...form, id_sucursal: e.target.value })} className="bg-input border border-secondary rounded-lg p-3">
+                <select value={form.id_sucursal} onChange={(e) => setForm({ ...form, id_sucursal: e.target.value })} disabled={Boolean(editando)} className="bg-input border border-secondary rounded-lg p-3 disabled:opacity-70">
                   <option value="">Seleccione una sucursal</option>
                   {sucursales.map((s) => (
-                    <option key={s.id} value={s.id}>{s.nombre}</option>
+                    <option key={s.id_sucursal} value={s.id_sucursal}>{s.nombre}</option>
                   ))}
                 </select>
               </div>

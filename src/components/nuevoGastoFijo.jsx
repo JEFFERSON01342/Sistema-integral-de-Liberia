@@ -2,12 +2,12 @@
 import { Save } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from "react-hot-toast";
-import { useCuentas } from '../hooks/useCuentas';
+import { useCuentasContables } from '../hooks/useCuentasContables';
 import { useGastosFijos } from '../hooks/useGastosFijos';
 
 export default function NuevoGastoFijo({ onClose }) {
     const { crearGastoFijo, isSaving } = useGastosFijos();
-    const { catalogoCuentas, isLoading: isLoadingCuentas } = useCuentas();
+    const { cuentas, isLoading: isLoadingCuentas } = useCuentasContables();
 
     const [descripcion, setDescripcion] = useState('');
     const [montoEstimado, setMontoEstimado] = useState('');
@@ -15,10 +15,8 @@ export default function NuevoGastoFijo({ onClose }) {
 
     // Filtra solo las cuentas de Gasto
     const cuentasDeGasto = useMemo(() => {
-        if (!catalogoCuentas) return [];
-        // Asume que ID 5 = Gasto
-        return catalogoCuentas.filter(c => c.id_tipo === 5);
-    }, [catalogoCuentas]);
+        return cuentas.filter((cuenta) => cuenta.naturaleza === "GASTO");
+    }, [cuentas]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -56,8 +54,10 @@ export default function NuevoGastoFijo({ onClose }) {
                         <label className="text-sm font-medium">Cuenta de Gasto Afectada</label>
                         <select value={idCuentaGasto} onChange={(e) => setIdCuentaGasto(e.target.value)} className="bg-input border border-secondary w-full rounded-lg p-3" required>
                             <option value="">{isLoadingCuentas ? "Cargando..." : "Seleccione cuenta de gasto..."}</option>
-                            {cuentasDeGasto.map(c => (
-                                <option key={c.id_cuenta} value={c.id_cuenta}>{c.nombre}</option>
+                            {cuentasDeGasto.map((cuenta) => (
+                                <option key={cuenta.id_cuenta} value={cuenta.id_cuenta}>
+                                    {cuenta.codigo} · {cuenta.nombre}
+                                </option>
                             ))}
                         </select>
                     </div>

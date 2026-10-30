@@ -62,8 +62,10 @@ export function useCajasBancos() {
     const [isSaving, setIsSaving] = useState(false);
     const movimientoAttemptRef = useRef(null);
     const saldoInicialAttemptRef = useRef(null);
+    const depositoAttemptRef = useRef(null);
     const savingMovementRef = useRef(false);
     const savingOpeningRef = useRef(false);
+    const savingDepositRef = useRef(false);
 
     const fetchMovimientos = useCallback(async () => {
         if (!empresaId) {
@@ -200,6 +202,73 @@ export function useCajasBancos() {
         }
     };
 
+    const depositarEnBanco = async (deposito) => {
+        if (!empresaId || !deposito.id_sucursal) {
+            toast.error("Seleccione una sucursal para registrar el depósito.");
+            return null;
+        }
+        const monto = Number(deposito.monto);
+        if (!Number.isFinite(monto) || monto <= 0 || !/^\d+(\.\d{1,2})?$/.test(String(deposito.monto).trim())) {
+            toast.error("El monto debe ser positivo y tener como máximo dos decimales.");
+            return null;
+        }
+        if (!deposito.id_cuenta_caja || !deposito.id_cuenta_banco
+            || Number(deposito.id_cuenta_caja) === Number(deposito.id_cuenta_banco)) {
+            toast.error("Seleccione una cuenta de efectivo y una cuenta bancaria distintas.");
+            return null;
+        }
+        const descripcion = deposito.descripcion?.trim() || "Depósito de efectivo a banco";
+        const fingerprint = JSON.stringify({
+            sucursalId: Number(deposito.id_sucursal),
+            cuentaCaja: Number(deposito.id_cuenta_caja),
+            cuentaBanco: Number(deposito.id_cuenta_banco),
+            monto,
+            fecha: deposito.fecha,
+            descripcion,
+            referencia: deposito.referencia?.trim() || "",
+            idSesion: deposito.id_sesion ? Number(deposito.id_sesion) : null,
+        });
+        if (depositoAttemptRef.current && depositoAttemptRef.current.fingerprint !== fingerprint) {
+            toast.error("Hay un depósito pendiente de confirmar. Reintente con los mismos datos antes de cambiarlo.");
+            return null;
+        }
+        if (savingDepositRef.current) return null;
+        savingDepositRef.current = true;
+        setIsSavingMov(true);
+        const intento = depositoAttemptRef.current || {
+            key: crypto.randomUUID(),
+            fingerprint,
+        };
+        depositoAttemptRef.current = intento;
+
+        try {
+            const { error } = await supabase.rpc("registrar_deposito_caja_banco", {
+                p_id_sucursal: Number(deposito.id_sucursal),
+                p_id_cuenta_caja: Number(deposito.id_cuenta_caja),
+                p_id_cuenta_banco: Number(deposito.id_cuenta_banco),
+                p_monto: monto,
+                p_fecha: deposito.fecha,
+                p_descripcion: descripcion,
+                p_referencia: deposito.referencia?.trim() || null,
+                p_id_sesion: deposito.id_sesion ? Number(deposito.id_sesion) : null,
+                p_clave_idempotencia: intento.key,
+            });
+            if (error) throw error;
+
+            depositoAttemptRef.current = null;
+            toast.success("Depósito registrado: banco debitado y efectivo acreditado.");
+            await fetchMovimientos();
+            return true;
+        } catch (error) {
+            console.error("Error al registrar depósito:", error.message);
+            toast.error(`No se pudo registrar el depósito: ${error.message}`);
+            return null;
+        } finally {
+            savingDepositRef.current = false;
+            setIsSavingMov(false);
+        }
+    };
+
     const revertirMovimiento = async (comprobanteId, motivo, fecha) => {
         setIsDeletingMov(true);
         try {
@@ -288,6 +357,7 @@ export function useCajasBancos() {
         movimientos,
         isLoading,
         agregarMovimiento,
+        depositarEnBanco,
         isSavingMov,
         revertirMovimiento,
         isDeletingMov,

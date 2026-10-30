@@ -5,6 +5,7 @@ import { useAuth } from "../contexts/authcontext";
 import StatsCards from "../components/statscards";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
+import { useEmpresa } from "../contexts/empresacontext";
 
 const MODULOS = [
   "Ventas", "Pedidos Web", "Inventario", "Caja", "Clientes",
@@ -28,7 +29,8 @@ const BADGE_PRIORIDAD = {
 };
 
 export default function TicketsIT() {
-  const { user, perfil, rol } = useAuth();
+  const { user, rol } = useAuth();
+  const { empresaId } = useEmpresa();
   const esSuperadmin = rol === "superadmin";
 
   const [tickets, setTickets] = useState([]);
@@ -57,7 +59,7 @@ export default function TicketsIT() {
       .select("*, sucursal:sucursales(nombre)")
       .order("created_at", { ascending: false });
     if (error) {
-      toast.error("No se pudieron cargar los tickets.");
+      toast.error(`No se pudieron cargar los tickets: ${error.message}`);
       setTickets([]);
       setIsLoading(false);
       return;
@@ -66,7 +68,13 @@ export default function TicketsIT() {
     // Resolver nombres de autor (la FK de tickets_it apunta a auth.users, no a perfiles)
     const ids = [...new Set(lista.map((t) => t.id_usuario).filter(Boolean))];
     if (ids.length) {
-      const { data: perfiles } = await supabase.from("perfiles").select("id, nombre_completo").in("id", ids);
+      const { data: perfiles, error: perfilesError } = await supabase
+        .from("perfiles")
+        .select("id, nombre_completo")
+        .in("id", ids);
+      if (perfilesError) {
+        toast.error(`No se pudieron cargar los autores de los tickets: ${perfilesError.message}`);
+      }
       const mapa = {};
       (perfiles || []).forEach((p) => { mapa[p.id] = p.nombre_completo; });
       lista = lista.map((t) => ({ ...t, autor: { nombre_completo: mapa[t.id_usuario] || "—" } }));
@@ -77,16 +85,31 @@ export default function TicketsIT() {
 
   useEffect(() => {
     cargar();
-    supabase.from("sucursales").select("id, nombre").eq("estado", true).then(({ data }) => setSucursales(data || []));
-  }, [cargar]);
+    supabase
+      .from("sucursales")
+      .select("id_sucursal, nombre")
+      .eq("id_empresa", empresaId)
+      .eq("activa", true)
+      .order("nombre")
+      .then(({ data, error }) => {
+        if (error) {
+          toast.error(`No se pudieron cargar las sucursales: ${error.message}`);
+          setSucursales([]);
+          return;
+        }
+        setSucursales(data || []);
+      });
+  }, [cargar, empresaId]);
 
   const crearTicket = async (e) => {
     e.preventDefault();
+    if (!empresaId) return toast.error("Selecciona una empresa antes de crear un ticket.");
     if (!form.titulo.trim()) return toast.error("El título es obligatorio.");
     if (!form.descripcion.trim()) return toast.error("La descripción es obligatoria.");
     setGuardando(true);
     const { error } = await supabase.from("tickets_it").insert([{
       id_usuario: user.id,
+      id_empresa: empresaId,
       titulo: form.titulo.trim(),
       modulo: form.modulo,
       prioridad: form.prioridad,
@@ -180,7 +203,7 @@ export default function TicketsIT() {
             </select>
             <select value={filtros.id_sucursal} onChange={(e) => setFiltros({ ...filtros, id_sucursal: e.target.value })} className="bg-input text-title border border-secondary rounded-lg px-3 py-1.5 text-sm">
               <option value="">Todas las sucursales</option>
-              {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              {sucursales.map((sucursal) => <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>)}
             </select>
           </div>
         )}
