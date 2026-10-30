@@ -307,6 +307,9 @@ export default function RRHHCrud({
                     <select value={form[c.name] ?? ""} onChange={(e) => cambiarCampo(c, e.target.value)} className="bg-input border border-secondary rounded-lg p-3 text-sm">
                       <option value="">Seleccione…</option>
                       {c.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      {editando && form[c.name] && !c.options.some((option) => option.value === form[c.name]) && (
+                        <option value={form[c.name]}>{`Valor histórico: ${pretty(form[c.name])}`}</option>
+                      )}
                     </select>
                   ) : c.type === "empleado" ? (
                     <select value={form[c.name] ?? ""} onChange={(e) => cambiarCampo(c, e.target.value)} className="bg-input border border-secondary rounded-lg p-3 text-sm">

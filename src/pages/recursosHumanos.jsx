@@ -47,6 +47,29 @@ const diasInclusivos = (inicio, fin) => {
     return Math.round((finUTC - inicioUTC) / 86400000) + 1;
 };
 
+const describirBaseBruto = (salarioMensual, tipoPeriodo, fechaInicio, fechaFin) => {
+    if (tipoPeriodo === "semanal") {
+        return `${fmtCordoba(salarioMensual)} × 12/52`;
+    }
+
+    const cursor = new Date(`${fechaInicio}T00:00:00Z`);
+    const fin = new Date(`${fechaFin}T00:00:00Z`);
+    const fracciones = [];
+    while (cursor <= fin) {
+        const anio = cursor.getUTCFullYear();
+        const mes = cursor.getUTCMonth();
+        const diasMes = new Date(Date.UTC(anio, mes + 1, 0)).getUTCDate();
+        let diasEnMes = 0;
+        while (cursor <= fin && cursor.getUTCFullYear() === anio && cursor.getUTCMonth() === mes) {
+            diasEnMes += 1;
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+        fracciones.push(`${diasEnMes}/${diasMes}`);
+    }
+
+    return `${fmtCordoba(salarioMensual)} × (${fracciones.join(" + ")})`;
+};
+
 export default function RecursosHumanos() {
     const { rol, perfil } = useAuth();
     const { empresaId } = useEmpresa();
@@ -579,7 +602,17 @@ export default function RecursosHumanos() {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="py-3 px-3 text-right">{fmtCordoba(d.calc.bruto)}</td>
+                                                    <td className="py-3 px-3 text-right">
+                                                        <div>{fmtCordoba(d.calc.bruto)}</div>
+                                                        <div className="whitespace-nowrap text-xs text-subtitle">
+                                                            {describirBaseBruto(
+                                                                Number(d.empleado.salario_mensual) || 0,
+                                                                tipoNomina,
+                                                                periodoInicio,
+                                                                periodoFin
+                                                            )}
+                                                        </div>
+                                                    </td>
                                                     <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.inssLaboral)}</td>
                                                     <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.irMensual)}</td>
                                                     <td className="min-w-72 px-3 py-2">

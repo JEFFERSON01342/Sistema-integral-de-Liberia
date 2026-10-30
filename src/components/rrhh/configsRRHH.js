@@ -18,9 +18,8 @@ export const CONTRATOS_CFG = {
     { name: "jornada", label: "Jornada", type: "select", default: "tiempo_completo", options: [
       { value: "tiempo_completo", label: "Tiempo completo" },
       { value: "medio_tiempo", label: "Medio tiempo" },
-      { value: "por_horas", label: "Por horas" },
     ] },
-    { name: "salario", label: "Salario (C$)", type: "money", default: 0, required: true, hint: "Se completa con el salario del empleado al seleccionarlo; puedes ajustarlo para este contrato." },
+    { name: "salario", label: "Salario mensual del contrato (C$)", type: "money", default: 0, required: true, hint: "La nómina usa el salario mensual de la ficha del empleado. Para medio tiempo, registra allí el monto mensual acordado; no se divide automáticamente a la mitad. Cambiar este contrato no actualiza la ficha del empleado." },
     { name: "fecha_inicio", label: "Fecha de inicio", type: "date", required: true },
     { name: "fecha_fin", label: "Fecha de fin", type: "date" },
     { name: "estado", label: "Estado", type: "select", default: "vigente", options: [
