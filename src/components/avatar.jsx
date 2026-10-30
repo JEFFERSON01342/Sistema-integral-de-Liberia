@@ -1,22 +1,5 @@
 import { useState, useEffect } from "react";
-
-export const AVATAR_DEFAULT = "/avatar-boy.png";
-
-// Avatares predefinidos (3D animados locales + estilos ilustrados).
-export const AVATARES_PRESET = [
-    "/avatar-boy.png",
-    "/avatar-girl.png",
-    "https://api.dicebear.com/9.x/adventurer/svg?seed=Lisjuashde&backgroundColor=b6e3f4",
-    "https://api.dicebear.com/9.x/adventurer/svg?seed=Valentina&backgroundColor=ffd5dc",
-    "https://api.dicebear.com/9.x/adventurer/svg?seed=Mateo&backgroundColor=c0aede",
-    "https://api.dicebear.com/9.x/avataaars/svg?seed=Sofia&backgroundColor=d1d4f9",
-    "https://api.dicebear.com/9.x/avataaars/svg?seed=Carlos&backgroundColor=b6e3f4",
-    "https://api.dicebear.com/9.x/avataaars/svg?seed=Lucia&backgroundColor=ffdfbf",
-    "https://api.dicebear.com/9.x/big-smile/svg?seed=Andres&backgroundColor=c0aede",
-    "https://api.dicebear.com/9.x/big-smile/svg?seed=Camila&backgroundColor=ffd5dc",
-    "https://api.dicebear.com/9.x/lorelei/svg?seed=Daniela&backgroundColor=b6e3f4",
-    "https://api.dicebear.com/9.x/notionists/svg?seed=Jose&backgroundColor=d1f4d9",
-];
+import { AVATAR_DEFAULT } from "./avatarPresets";
 
 const iniciales = (nombre) => {
     if (!nombre) return "?";
@@ -51,7 +34,7 @@ export default function Avatar({ src, nombre, size = 36, className = "", ring = 
             alt={nombre || "Avatar"}
             style={style}
             onError={() => setError(true)}
-            className={`rounded-full object-cover bg-[#3B82F6]/20 ${ringCls} ${className}`}
+            className={`rounded-full object-cover bg-[#f4ece1] ${ringCls} ${className}`}
         />
     );
 }

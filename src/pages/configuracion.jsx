@@ -8,7 +8,8 @@ import { useAuth } from "../contexts/authcontext";
 import { useTheme } from "../contexts/themecontext";
 import { useSettings, ACCENTS, SIDEBARS } from "../contexts/settingscontext";
 import { supabase } from "../supabase/supabaseclient";
-import Avatar, { AVATARES_PRESET, AVATAR_DEFAULT } from "../components/avatar";
+import Avatar from "../components/avatar";
+import { AVATARES_PRESET, AVATAR_DEFAULT } from "../components/avatarPresets";
 
 const ROL_LABEL = {
     superadmin: "Super Administrador", admin: "Administrador", gerente: "Gerente",
@@ -119,19 +120,23 @@ function TabPerfil({ t }) {
                         </div>
                     </div>
                     <p className="text-title text-sm font-semibold mb-3">{t("Avatares disponibles")}</p>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                        {AVATARES_PRESET.map((url) => (
-                            <button
-                                key={url}
-                                onClick={() => elegirAvatar(url)}
-                                className={`erp-option relative p-1 rounded-full aspect-square ${actual === url ? "selected" : ""}`}
-                                style={{ borderRadius: "9999px" }}
-                            >
-                                <img src={url} alt="avatar" className="w-full h-full rounded-full object-cover" loading="lazy" />
-                                {actual === url && (
-                                    <span className="absolute -top-1 -right-1 bg-button text-white rounded-full p-0.5"><Check size={12} /></span>
-                                )}
-                            </button>
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                        {AVATARES_PRESET.map(({ url, label }) => (
+                            <div key={url} className="flex flex-col items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => elegirAvatar(url)}
+                                    aria-label={`${t("Usar avatar")}: ${t(label)}`}
+                                    aria-pressed={actual === url}
+                                    className={`erp-option relative aspect-square w-full max-w-20 rounded-full p-1 ${actual === url ? "selected" : ""}`}
+                                >
+                                    <img src={url} alt="" className="w-full h-full rounded-full object-cover" loading="lazy" />
+                                    {actual === url && (
+                                        <span className="absolute -top-1 -right-1 bg-button text-white rounded-full p-0.5"><Check size={12} /></span>
+                                    )}
+                                </button>
+                                <span className="text-subtitle text-center text-[0.68rem] leading-tight">{t(label)}</span>
+                            </div>
                         ))}
                     </div>
                 </Seccion>
