@@ -8,6 +8,8 @@ import ClientesCards from "../components/clientesCards";
 import { useCuentasPorCobrar } from "../hooks/useCuentasPorCobrar";
 import RegistrarPagoCliente from "../components/registrarPagoCliente";
 import { format } from "date-fns/format";
+import Swal from "sweetalert2";
+import { toast } from "react-hot-toast";
 
 export default function Clientes() {
     const tabs = [
@@ -18,8 +20,15 @@ export default function Clientes() {
     const [activeTab, setActiveTab] = useState("clientes");
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPagoModalOpen, setIsPagoModalOpen] = useState(false);
+    const [clienteEditando, setClienteEditando] = useState(null);
     const [facturaSeleccionada, setFacturaSeleccionada] = useState(null);
-    const { clientes } = useClientes();
+    const {
+        clientes,
+        loading: cargandoClientes,
+        fetchClientes,
+        cambiarEstadoCliente,
+        eliminarCliente,
+    } = useClientes();
     const valorTotalInventario = 0;
 
     const {
@@ -40,10 +49,50 @@ export default function Clientes() {
         setIsPagoModalOpen(true);
     };
 
+    const handleCambiarEstadoCliente = async (cliente) => {
+        const confirmacion = await Swal.fire({
+            title: cliente.activo ? "¿Desactivar cliente?" : "¿Reactivar cliente?",
+            text: cliente.activo
+                ? "No podrá seleccionarse en nuevas ventas. Su historial y cuentas por cobrar se conservarán."
+                : "Volverá a estar disponible para nuevas ventas.",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: cliente.activo ? "Desactivar" : "Reactivar",
+            cancelButtonText: "Cancelar",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+        if (!confirmacion.isConfirmed) return;
+        const resultado = await cambiarEstadoCliente(cliente);
+        if (resultado.success) {
+            toast.success(cliente.activo ? "Cliente desactivado." : "Cliente reactivado.");
+        } else {
+            toast.error(resultado.message);
+        }
+    };
+
+    const handleEliminarCliente = async (cliente) => {
+        const confirmacion = await Swal.fire({
+            title: "¿Eliminar cliente?",
+            text: "Solo se eliminará si no tiene ventas ni cuentas relacionadas. Si tiene historial, desactívelo.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Eliminar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#dc2626",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+        if (!confirmacion.isConfirmed) return;
+        const resultado = await eliminarCliente(cliente);
+        if (resultado.success) toast.success("Cliente eliminado.");
+        else toast.error("No se puede eliminar porque tiene historial relacionado. Desactívelo para conservarlo.");
+    };
+
     return (
         <div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                <StatsCards title={"Total Clientes"} icon={<Box className="text-title" />} value={<span>{clientes.length}</span>} />
+                <StatsCards title={"Clientes Activos"} icon={<Box className="text-title" />} value={<span>{clientes.filter((cliente) => cliente.activo).length}</span>} />
                 <StatsCards title={"Cuentas por Cobrar"} icon={<DollarSign className="text-title" />} value={`C$${totalPorCobrar.toFixed(2)}`} />
                 <StatsCards title={"Clientes Morosos"} icon={<CircleAlert color="red" />} value={clientesMorosos} />
                 <StatsCards title={"Pagos Pendientes"} icon={<TrendingDown className="text-title" />} value={"0"} />
@@ -64,12 +113,20 @@ export default function Clientes() {
                                 </button>
                             </div>
 
-                            {clientes.length === 0 ? (
+                            {cargandoClientes ? (
+                                <p className="text-center text-subtitle p-4">Cargando clientes...</p>
+                            ) : clientes.length === 0 ? (
                                 <p className="text-center text-subtitle">No hay clientes registrados</p>
                             ) : (
                                 <div className="mt-8 flex flex-col gap-4">
                                     {clientes.map(cliente => (
-                                        <ClientesCards key={cliente.id_cliente} {...cliente} />
+                                        <ClientesCards
+                                            key={cliente.id_cliente}
+                                            {...cliente}
+                                            onEditar={() => setClienteEditando(cliente)}
+                                            onCambiarEstado={() => handleCambiarEstadoCliente(cliente)}
+                                            onEliminar={() => handleEliminarCliente(cliente)}
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -132,7 +189,19 @@ export default function Clientes() {
                 <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
                     <div className="absolute inset-0" onClick={() => setIsModalOpen(false)}></div>
                     <div className="relative z-10 mx-4">
-                        <NuevoCliente onClose={() => setIsModalOpen(false)} />
+                        <NuevoCliente onClose={() => { setIsModalOpen(false); fetchClientes(); }} />
+                    </div>
+                </div>
+            )}
+
+            {clienteEditando && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
+                    <div className="absolute inset-0" onClick={() => setClienteEditando(null)}></div>
+                    <div className="relative z-10 mx-4">
+                        <NuevoCliente
+                            cliente={clienteEditando}
+                            onClose={() => { setClienteEditando(null); fetchClientes(); }}
+                        />
                     </div>
                 </div>
             )}

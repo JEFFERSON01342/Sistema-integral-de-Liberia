@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { DollarSign, Clock, Users, Plus, Calendar, Building2 } from "lucide-react";
 import EmpleadosCards from "../components/empleadosCards";
 import { useEmpleados } from "../hooks/useEmpleados";
+import { useCatalogosLaborales } from "../hooks/useCatalogosLaborales";
 import { useAuth } from "../contexts/authcontext";
 
 export default function Personal() {
@@ -14,7 +15,8 @@ export default function Personal() {
     const restringidoPorSucursal = rol === 'admin' || rol === 'gerente';
     const idSucursalFiltro = restringidoPorSucursal ? (perfil?.id_sucursal || null) : null;
 
-    const { empleados, isLoading } = useEmpleados(idSucursalFiltro);
+    const { empleados, isLoading, fetchEmpleados } = useEmpleados(idSucursalFiltro);
+    const { departamentos, puestos } = useCatalogosLaborales({ incluirInactivos: true });
     // Conteo total de empleados de la empresa (para comparar contra la sucursal).
     const { empleados: todosLosEmpleados } = useEmpleados();
 
@@ -60,7 +62,17 @@ export default function Personal() {
                     ) : (
                         <div className="mt-8 flex flex-col gap-4">
                             {empleados.map(empleado => (
-                                <EmpleadosCards key={empleado.id_empleado} {...empleado} rol={rol} />
+                                <EmpleadosCards
+                                    key={empleado.id_empleado}
+                                    {...empleado}
+                                    rol={rol}
+                                    rolAccesoPuesto={puestos.find((puesto) =>
+                                        Number(puesto.id_puesto) === Number(empleado.id_puesto)
+                                    )?.rol_acceso || null}
+                                    departamentosLaborales={departamentos}
+                                    puestosLaborales={puestos}
+                                    onActualizar={fetchEmpleados}
+                                />
                             ))}
                         </div>
                     )}

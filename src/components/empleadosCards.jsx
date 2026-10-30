@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { DollarSign, Pencil, Link2, Save } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
 import { supabase } from "../supabase/supabaseclient";
@@ -28,11 +28,19 @@ export default function EmpleadosCards({
     email,
     telefono,
     puesto,
+    departamento,
+    id_puesto,
+    id_departamento,
+    fecha_ingreso,
+    cuenta_bancaria,
+    departamentosLaborales = [],
+    puestosLaborales = [],
     salario_mensual,
     clase_trabajador,
     frecuencia_pago,
     id_sucursal,
     id_perfil,
+    rolAccesoPuesto,
     estado,
     rol,
     onActualizar,
@@ -73,10 +81,34 @@ export default function EmpleadosCards({
         identificacion: identificacion || "",
         email: email || "",
         telefono: telefono || "",
-        puesto: puesto || "",
+        id_departamento: id_departamento ? String(id_departamento) : "",
+        id_puesto: id_puesto ? String(id_puesto) : "",
         salario_mensual: salario_mensual || 0,
+        cuenta_bancaria: cuenta_bancaria || "",
+        estado: estado || "Activo",
         clase_trabajador: clase_trabajador || "empleado",
     });
+    const puestosDisponiblesEdit = puestosLaborales.filter((puestoItem) =>
+        String(puestoItem.id_departamento || "") === editForm.id_departamento
+    );
+    const puestoEditado = puestosLaborales.find(
+        (puestoItem) => String(puestoItem.id_puesto) === editForm.id_puesto
+    );
+
+    useEffect(() => {
+        setEditForm({
+            nombre_completo: nombre_completo || "",
+            identificacion: identificacion || "",
+            email: email || "",
+            telefono: telefono || "",
+            id_departamento: id_departamento ? String(id_departamento) : "",
+            id_puesto: id_puesto ? String(id_puesto) : "",
+            salario_mensual: salario_mensual || 0,
+            cuenta_bancaria: cuenta_bancaria || "",
+            estado: estado || "Activo",
+            clase_trabajador: clase_trabajador || "empleado",
+        });
+    }, [nombre_completo, identificacion, email, telefono, id_departamento, id_puesto, salario_mensual, cuenta_bancaria, estado, clase_trabajador]);
 
     /* ---- Handlers ---- */
     const abrirPago = async () => {
@@ -251,6 +283,22 @@ export default function EmpleadosCards({
 
     const handleGuardarEdit = async (e) => {
         e.preventDefault();
+        if (id_perfil && puestoEditado?.rol_acceso !== rolAccesoPuesto) {
+            if (!puestoEditado?.rol_acceso) {
+                return toast.error("Desvincula la cuenta antes de asignar un puesto sin acceso.");
+            }
+            const confirmacion = await Swal.fire({
+                title: "¿Cambiar puesto y acceso?",
+                text: `Al guardar, la cuenta vinculada adoptará el rol "${puestoEditado.rol_acceso}".`,
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonText: "Guardar y cambiar rol",
+                cancelButtonText: "Cancelar",
+                background: "#1e1e1e",
+                color: "#fff",
+            });
+            if (!confirmacion.isConfirmed) return;
+        }
         setGuardandoEdit(true);
         const { error } = await supabase
             .from("empleados")
@@ -259,8 +307,11 @@ export default function EmpleadosCards({
                 identificacion: editForm.identificacion,
                 email: editForm.email,
                 telefono: editForm.telefono,
-                puesto: editForm.puesto,
+                id_departamento: editForm.id_departamento ? Number(editForm.id_departamento) : null,
+                id_puesto: editForm.id_puesto ? Number(editForm.id_puesto) : null,
                 salario_mensual: Number(editForm.salario_mensual) || 0,
+                cuenta_bancaria: editForm.cuenta_bancaria || null,
+                estado: editForm.estado,
                 clase_trabajador: editForm.clase_trabajador,
                 frecuencia_pago: editForm.clase_trabajador === "obrero" ? "semanal" : "quincenal",
             })
@@ -298,6 +349,10 @@ export default function EmpleadosCards({
                         {clase_trabajador === "obrero" ? "Obrero · semanal" : "Empleado · quincenal"}
                         {frecuencia_pago ? ` (máximo ${frecuencia_pago === "semanal" ? 7 : 15} días)` : ""}
                     </p>
+                    <p className="text-xs text-subtitle">
+                        {[puesto, departamento].filter(Boolean).join(" · ") || "Sin puesto asignado"}
+                    </p>
+                    {fecha_ingreso && <p className="text-xs text-subtitle">Ingreso: {fecha_ingreso}</p>}
                     {id_perfil && <p className="text-xs text-green-500">Cuenta del panel vinculada</p>}
                 </div>
                 <div className="flex flex-row flex-wrap gap-3 items-center mt-4 md:mt-0">
@@ -308,13 +363,16 @@ export default function EmpleadosCards({
                     >
                         Dar de baja
                     </button>
-                    {puedePagar && (
+                    {(puedePagar && (Boolean(rolAccesoPuesto) || Boolean(id_perfil))) && (
                         <button
                             onClick={abrirPago}
                             className="border border-secondary text-green-500 p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition flex items-center gap-1"
                         >
                             <DollarSign size={14} /> Pagar Salario
                         </button>
+                    )}
+                    {!rolAccesoPuesto && !id_perfil && (
+                        <span className="text-xs text-subtitle">Sin acceso de sistema para este puesto</span>
                     )}
                     {puedePagar && (
                         <button
@@ -421,6 +479,9 @@ export default function EmpleadosCards({
                     <div className="relative z-10 mx-4 bg-primary text-title p-8 rounded-2xl w-full max-w-md shadow-lg border border-secondary">
                         <h3 className="text-xl font-semibold mb-2">Vincular cuenta de acceso</h3>
                         <p className="text-sm text-subtitle mb-5">{nombre_completo}</p>
+                        <p className="text-xs text-subtitle mb-4">
+                            Al guardar, la cuenta recibirá el rol configurado en el puesto del empleado.
+                        </p>
                         <form onSubmit={guardarVinculoPerfil} className="flex flex-col gap-5">
                             <select
                                 value={perfilSeleccionado}
@@ -470,12 +531,66 @@ export default function EmpleadosCards({
                                 <input type="tel" value={editForm.telefono} onChange={setEdit("telefono")} className="bg-input border border-secondary rounded-lg p-3" />
                             </div>
                             <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Departamento</label>
+                                <select
+                                    value={editForm.id_departamento}
+                                    onChange={(event) => setEditForm((form) => ({
+                                        ...form,
+                                        id_departamento: event.target.value,
+                                        id_puesto: "",
+                                    }))}
+                                    className="bg-input border border-secondary rounded-lg p-3"
+                                >
+                                    <option value="">Sin departamento</option>
+                                    {departamentosLaborales.map((item) => (
+                                        <option key={item.id_departamento} value={item.id_departamento}>{item.nombre}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium">Puesto</label>
-                                <input type="text" value={editForm.puesto} onChange={setEdit("puesto")} className="bg-input border border-secondary rounded-lg p-3" />
+                                <select
+                                    value={editForm.id_puesto}
+                                    onChange={(event) => {
+                                        const selected = puestosLaborales.find((item) => String(item.id_puesto) === event.target.value);
+                                        setEditForm((form) => ({
+                                            ...form,
+                                            id_puesto: event.target.value,
+                                            id_departamento: selected?.id_departamento ? String(selected.id_departamento) : form.id_departamento,
+                                        }));
+                                    }}
+                                    className="bg-input border border-secondary rounded-lg p-3"
+                                >
+                                    <option value="">Sin puesto</option>
+                                    {puestosDisponiblesEdit.map((item) => (
+                                        <option key={item.id_puesto} value={item.id_puesto}>
+                                            {item.nombre}{!item.rol_acceso ? " · Sin acceso al sistema" : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                                {puestoEditado?.rol_acceso && (
+                                    <span className="text-xs text-subtitle">Al guardar, la cuenta vinculada adoptará el rol {puestoEditado.rol_acceso}.</span>
+                                )}
+                                {id_perfil && !puestoEditado?.rol_acceso && (
+                                    <span className="text-xs text-amber-400">Para cambiar a un puesto sin acceso, primero desvincula la cuenta y desactívala en Usuarios.</span>
+                                )}
                             </div>
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium">Salario Mensual (C$)</label>
                                 <input type="number" step="0.01" value={editForm.salario_mensual} onChange={setEdit("salario_mensual")} className="bg-input border border-secondary rounded-lg p-3" />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Cuenta bancaria</label>
+                                <input type="text" value={editForm.cuenta_bancaria} onChange={setEdit("cuenta_bancaria")} className="bg-input border border-secondary rounded-lg p-3" />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium">Estado laboral</label>
+                                <select value={editForm.estado} onChange={setEdit("estado")} className="bg-input border border-secondary rounded-lg p-3">
+                                    <option value="Activo">Activo</option>
+                                    <option value="Inactivo">Inactivo</option>
+                                    <option value="Suspendido">Suspendido</option>
+                                    <option value="Terminado">Terminado</option>
+                                </select>
                             </div>
                             <div className="flex flex-col gap-2 md:col-span-2">
                                 <label className="text-sm font-medium">Clasificación para calendario de pago</label>
@@ -484,6 +599,10 @@ export default function EmpleadosCards({
                                     <option value="empleado">Empleado — quincenal, máximo 15 días</option>
                                 </select>
                             </div>
+                            <p className="md:col-span-2 text-xs text-subtitle">
+                                Fecha de ingreso: {fecha_ingreso || "No registrada"}. Esta fecha no se puede cambiar desde la edición.
+                                Los cambios de salario afectan nóminas futuras, no las ya procesadas.
+                            </p>
                             <div className="md:col-span-2 flex justify-end gap-4 mt-2">
                                 <button type="button" onClick={() => setModalEdit(false)} className="bg-secondary text-button-text border border-secondary py-2 px-6 rounded-lg cursor-pointer hover:scale-110 transition">Cancelar</button>
                                 <button type="submit" disabled={guardandoEdit} className="bg-button text-button py-2 px-4 rounded-lg cursor-pointer hover:bg-[#E8E8E8] transition flex items-center gap-2 disabled:opacity-60">

@@ -4,6 +4,7 @@ import { toast } from "react-hot-toast"
 import { useEmpleados } from "../hooks/useEmpleados";
 import { supabase } from "../supabase/supabaseclient";
 import { useEmpresa } from "../contexts/empresacontext";
+import { useCatalogosLaborales } from "../hooks/useCatalogosLaborales";
 
 export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
     const { addEmpleado } = useEmpleados();
@@ -13,8 +14,8 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
     const [identificacion, setIdentificacion] = useState('');
     const [email, setEmail] = useState('');
     const [telefono, setTelefono] = useState('');
-    const [puesto, setPuesto] = useState('');
-    const [departamento, setDepartamento] = useState(''); 
+    const [idPuesto, setIdPuesto] = useState('');
+    const [idDepartamento, setIdDepartamento] = useState('');
     const [salarioMensual, setSalarioMensual] = useState('');
     const [fechaIngreso, setFechaIngreso] = useState('');
     const [cuentaBancaria, setCuentaBancaria] = useState('');
@@ -22,6 +23,11 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
     const [claseTrabajador, setClaseTrabajador] = useState('empleado');
     const [sucursales, setSucursales] = useState([]);
     const [sucursalId, setSucursalId] = useState(idSucursalFija ? String(idSucursalFija) : '');
+    const { departamentos, puestos, isLoading: isLoadingCatalogos } = useCatalogosLaborales();
+    const puestosDisponibles = puestos.filter((puesto) =>
+        String(puesto.id_departamento || "") === idDepartamento
+    );
+    const puestoSeleccionado = puestos.find((puesto) => String(puesto.id_puesto) === idPuesto);
 
     // Cargamos las sucursales disponibles (para que el superadmin pueda elegir).
     useEffect(() => {
@@ -54,8 +60,8 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
             identificacion: identificacion,
             email: email,
             telefono: telefono,
-            puesto: puesto,
-            departamento: departamento,
+            id_puesto: idPuesto ? Number(idPuesto) : null,
+            id_departamento: idDepartamento ? Number(idDepartamento) : null,
             salario_mensual: Number(salarioMensual) || 0,
             fecha_ingreso: fechaIngreso || null,
             cuenta_bancaria: cuentaBancaria,
@@ -104,13 +110,50 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium text-title">Puesto</label>
-                            <input type="text" value={puesto} onChange={e => setPuesto(e.target.value)} placeholder="Ej: Gerente de Ventas" className="bg-input border border-secondary rounded-lg p-3" />
+                            <label className="text-sm font-medium text-title">Departamento</label>
+                            <select
+                                value={idDepartamento}
+                                onChange={(event) => {
+                                    setIdDepartamento(event.target.value);
+                                    setIdPuesto('');
+                                }}
+                                className="bg-input border border-secondary rounded-lg p-3"
+                                disabled={isLoadingCatalogos}
+                            >
+                                <option value="">{isLoadingCatalogos ? "Cargando..." : "Seleccione departamento..."}</option>
+                                {departamentos.map((departamento) => (
+                                    <option key={departamento.id_departamento} value={departamento.id_departamento}>{departamento.nombre}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium text-title">Departamento</label>
-                            <input type="text" value={departamento} onChange={e => setDepartamento(e.target.value)} placeholder="Ej: Ventas" className="bg-input border border-secondary rounded-lg p-3" />
+                            <label className="text-sm font-medium text-title">Puesto</label>
+                            <select
+                                value={idPuesto}
+                                onChange={(event) => {
+                                    const nuevoPuesto = puestos.find((puesto) => String(puesto.id_puesto) === event.target.value);
+                                    setIdPuesto(event.target.value);
+                                    if (nuevoPuesto?.id_departamento) setIdDepartamento(String(nuevoPuesto.id_departamento));
+                                }}
+                                className="bg-input border border-secondary rounded-lg p-3"
+                                disabled={isLoadingCatalogos || !puestosDisponibles.length}
+                            >
+                                <option value="">{isLoadingCatalogos ? "Cargando..." : "Seleccione puesto..."}</option>
+                                {puestosDisponibles.map((puesto) => (
+                                    <option key={puesto.id_puesto} value={puesto.id_puesto}>{puesto.nombre}</option>
+                                ))}
+                            </select>
+                            {puestoSeleccionado && (
+                                <span className="text-xs text-subtitle">
+                                    {puestoSeleccionado.rol_acceso
+                                        ? `El rol ${puestoSeleccionado.rol_acceso} se aplicará cuando vincule una cuenta.`
+                                        : "Puesto de apoyo: no requiere una cuenta de acceso."}
+                                </span>
+                            )}
+                            {!departamentos.length && !puestos.length && !isLoadingCatalogos && (
+                                <span className="text-xs text-amber-400">Primero cree departamentos y puestos en la pestaña “Puestos y departamentos”.</span>
+                            )}
                         </div>
 
                         <div className="flex flex-col gap-2">

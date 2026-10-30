@@ -2,8 +2,9 @@ import StatsCards from "../components/statscards"
 import Tabs from "../components/tabs"
 import NuevoProveedor from "../components/nuevoProveedor"
 import { useState } from "react"
-import { DollarSign, ShoppingCart, UsersRound, Plus, ShoppingBasket, CreditCard, PackageCheck, Send } from "lucide-react"
+import { DollarSign, ShoppingCart, UsersRound, Plus, ShoppingBasket, CreditCard, PackageCheck, Send, Pencil, Power, Trash2 } from "lucide-react"
 import { toast } from "react-hot-toast";
+import Swal from "sweetalert2";
 import { useProveedores } from "../hooks/useProveedores"
 import { useCompras } from "../hooks/useCompras";
 import NuevaCompra from "../components/nuevaCompra";
@@ -22,7 +23,8 @@ export default function Proveedores() {
     const [isRecepcionModalOpen, setIsRecepcionModalOpen] = useState(false);
     const [cuentaSeleccionada, setCuentaSeleccionada] = useState(null);
     const [ordenSeleccionada, setOrdenSeleccionada] = useState(null);
-    const { proveedores, isLoading, fetchProveedores } = useProveedores();
+    const [proveedorEditando, setProveedorEditando] = useState(null);
+    const { proveedores, isLoading, fetchProveedores, cambiarEstadoProveedor, eliminarProveedor } = useProveedores();
     const {
         ordenes,
         cuentasPorPagar,
@@ -51,6 +53,46 @@ export default function Proveedores() {
     const enviarOrden = async (idOrden) => {
         const resultado = await cambiarEstadoOrdenCompra(idOrden, "ENVIADA");
         if (resultado.success) toast.success("Orden enviada al proveedor.");
+    };
+
+    const cambiarEstado = async (proveedor) => {
+        const resultado = await Swal.fire({
+            title: proveedor.activo ? "¿Desactivar proveedor?" : "¿Reactivar proveedor?",
+            text: proveedor.activo
+                ? "No podrá seleccionarse en nuevas compras. Su historial se conservará."
+                : "Volverá a estar disponible para nuevas compras.",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: proveedor.activo ? "Desactivar" : "Reactivar",
+            cancelButtonText: "Cancelar",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+        if (!resultado.isConfirmed) return;
+        const actualizacion = await cambiarEstadoProveedor(proveedor);
+        if (actualizacion.success) {
+            toast.success(proveedor.activo ? "Proveedor desactivado." : "Proveedor reactivado.");
+        } else {
+            toast.error(actualizacion.message);
+        }
+    };
+
+    const eliminar = async (proveedor) => {
+        const confirmacion = await Swal.fire({
+            title: "¿Eliminar proveedor?",
+            text: "Solo se eliminará si no tiene órdenes, compras, pagos o activos relacionados. Si tiene historial, desactívelo.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Eliminar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#dc2626",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+        if (!confirmacion.isConfirmed) return;
+        const resultado = await eliminarProveedor(proveedor);
+        if (resultado.success) toast.success("Proveedor eliminado.");
+        else toast.error("No se puede eliminar porque tiene historial relacionado. Desactívelo para conservarlo.");
     };
 
     return (
@@ -99,6 +141,7 @@ export default function Proveedores() {
                                                 <th className="py-3 px-2 w-60 text-center">Dirección</th>
                                                 <th className="py-3 px-2 w-32 text-center">Plazo crédito</th>
                                                 <th className="py-3 px-2 w-32 text-center">Estado</th>
+                                                <th className="py-3 px-2 w-24 text-center">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -116,6 +159,27 @@ export default function Proveedores() {
                                                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${p.estado === 1 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
                                                             {p.estado === 1 ? "Activo" : "Inactivo"}
                                                         </span>
+                                                    </td>
+                                                    <td className="py-3 px-2 text-center">
+                                                        <div className="flex items-center justify-center gap-3">
+                                                            <button
+                                                                onClick={() => setProveedorEditando(p)}
+                                                                title="Editar proveedor"
+                                                                className="text-blue-400 hover:text-blue-300"
+                                                            >
+                                                                <Pencil size={17} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => cambiarEstado(p)}
+                                                                title={p.activo ? "Desactivar proveedor" : "Reactivar proveedor"}
+                                                                className={p.activo ? "text-amber-400 hover:text-amber-300" : "text-green-400 hover:text-green-300"}
+                                                            >
+                                                                <Power size={17} />
+                                                            </button>
+                                                            <button onClick={() => eliminar(p)} title="Eliminar si no tiene historial" className="text-red-400 hover:text-red-300">
+                                                                <Trash2 size={17} />
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -237,6 +301,21 @@ export default function Proveedores() {
                     <div className="absolute inset-0" onClick={() => setIsModalOpen(false)}></div>
                     <div className="relative z-10 mx-4">
                         <NuevoProveedor onClose={() => { setIsModalOpen(false); fetchProveedores(); }} />
+                    </div>
+                </div>
+            )}
+
+            {proveedorEditando && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
+                    <div className="absolute inset-0" onClick={() => setProveedorEditando(null)}></div>
+                    <div className="relative z-10 mx-4">
+                        <NuevoProveedor
+                            proveedor={proveedorEditando}
+                            onClose={() => {
+                                setProveedorEditando(null);
+                                fetchProveedores();
+                            }}
+                        />
                     </div>
                 </div>
             )}

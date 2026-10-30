@@ -5,13 +5,13 @@ import { toast } from "react-hot-toast";
 import { useCuentasContables } from '../hooks/useCuentasContables';
 import { useGastosFijos } from '../hooks/useGastosFijos';
 
-export default function NuevoGastoFijo({ onClose }) {
-    const { crearGastoFijo, isSaving } = useGastosFijos();
+export default function NuevoGastoFijo({ onClose, gasto = null }) {
+    const { crearGastoFijo, actualizarGastoFijo, isSaving } = useGastosFijos();
     const { cuentas, isLoading: isLoadingCuentas } = useCuentasContables();
 
-    const [descripcion, setDescripcion] = useState('');
-    const [montoEstimado, setMontoEstimado] = useState('');
-    const [idCuentaGasto, setIdCuentaGasto] = useState('');
+    const [descripcion, setDescripcion] = useState(gasto?.descripcion || '');
+    const [montoEstimado, setMontoEstimado] = useState(gasto?.monto_estimado ?? '');
+    const [idCuentaGasto, setIdCuentaGasto] = useState(gasto?.id_cuenta_gasto ? String(gasto.id_cuenta_gasto) : '');
 
     // Filtra solo las cuentas de Gasto
     const cuentasDeGasto = useMemo(() => {
@@ -31,7 +31,9 @@ export default function NuevoGastoFijo({ onClose }) {
             id_cuenta_gasto: Number(idCuentaGasto)
         };
 
-        const { success } = await crearGastoFijo(gastoData);
+        const { success } = gasto
+            ? await actualizarGastoFijo({ ...gastoData, id_gasto_fijo: gasto.id_gasto_fijo })
+            : await crearGastoFijo(gastoData);
         if (success) {
             onClose();
         }
@@ -39,7 +41,7 @@ export default function NuevoGastoFijo({ onClose }) {
 
     return (
         <div className="bg-primary text-title p-8 rounded-2xl w-full max-w-lg shadow-lg">
-            <h3 className="text-2xl font-semibold mb-6">Nueva Plantilla de Gasto Fijo</h3>
+            <h3 className="text-2xl font-semibold mb-6">{gasto ? "Editar Plantilla de Gasto Fijo" : "Nueva Plantilla de Gasto Fijo"}</h3>
             <form onSubmit={handleSubmit}>
                 <div className="flex flex-col gap-4">
                     <div className="flex flex-col gap-2">
@@ -66,7 +68,7 @@ export default function NuevoGastoFijo({ onClose }) {
                     <button type="button" onClick={onClose} className="cursor-pointer bg-secondary text-button-text border border-secondary font-semibold py-2 px-6 rounded-lg hover:bg-button-cancel transition-transform duration-200 ease-in-out hover:scale-110">Cancelar</button>
                     <button type="submit" disabled={isSaving || isLoadingCuentas} className="cursor-pointer bg-button text-button font-semibold py-2 px-2 rounded-lg hover:bg-[#E8E8E8] transition-transform duration-200 ease-in-out hover:scale-110 flex flex-row gap-2 items-center">
                         <Save />
-                        {isSaving ? "Guardando..." : "Guardar Plantilla"}
+                        {isSaving ? "Guardando..." : gasto ? "Guardar cambios" : "Guardar Plantilla"}
                     </button>
                 </div>
             </form>

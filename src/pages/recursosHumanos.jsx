@@ -8,6 +8,7 @@ import Tabs from "../components/tabs";
 import NuevoEmpleado from "../components/nuevoempleado";
 import EmpleadosCards from "../components/empleadosCards";
 import RRHHCrud from "../components/rrhh/RRHHCrud";
+import CatalogosLaborales from "../components/rrhh/CatalogosLaborales";
 import MarcoLegalInfo from "../components/rrhh/MarcoLegalInfo";
 import ConfiguracionContableNomina from "../components/rrhh/ConfiguracionContableNomina";
 import LiquidacionesLaborales from "../components/rrhh/LiquidacionesLaborales";
@@ -16,6 +17,7 @@ import {
     SEGURIDAD_CFG, MARCO_LEGAL_CFG, CUMPLIMIENTO_CFG
 } from "../components/rrhh/configsRRHH";
 import { useEmpleados } from "../hooks/useEmpleados";
+import { useCatalogosLaborales } from "../hooks/useCatalogosLaborales";
 import { useEmpresa } from "../contexts/empresacontext";
 import { useAuth } from "../contexts/authcontext";
 import { supabase } from "../supabase/supabaseclient";
@@ -51,6 +53,7 @@ export default function RecursosHumanos() {
 
     const tabs = [
         { key: "empleados", label: "Empleados", icon: <Users size={16} /> },
+        { key: "puestos", label: "Puestos y departamentos", icon: <Briefcase size={16} /> },
         { key: "contratos", label: "Contratos", icon: <FileText size={16} /> },
         { key: "asistencia", label: "Asistencia", icon: <Clock size={16} /> },
         { key: "vacaciones", label: "Vacaciones y permisos", icon: <Plane size={16} /> },
@@ -76,6 +79,10 @@ export default function RecursosHumanos() {
 
     const { empleados, isLoading, fetchEmpleados } = useEmpleados(idSucursalFiltro);
     const { empleados: todosLosEmpleados, fetchEmpleados: fetchTodos } = useEmpleados();
+    const {
+        departamentos: departamentosLaborales,
+        puestos: puestosLaborales,
+    } = useCatalogosLaborales({ incluirInactivos: true });
     const refrescarEmpleados = () => { fetchEmpleados(); fetchTodos(); };
 
     const { empleadosActivos, nominaMensual } = useMemo(() => {
@@ -309,12 +316,25 @@ export default function RecursosHumanos() {
                             ) : (
                                 <div className="mt-8 flex flex-col gap-4">
                                     {empleados.map((empleado) => (
-                                        <EmpleadosCards key={empleado.id_empleado} {...empleado} rol={rol} onActualizar={refrescarEmpleados} onPagoRegistrado={cargarHistorial} />
+                                        <EmpleadosCards
+                                            key={empleado.id_empleado}
+                                            {...empleado}
+                                            rol={rol}
+                                            rolAccesoPuesto={puestosLaborales.find(
+                                                (puesto) => Number(puesto.id_puesto) === Number(empleado.id_puesto)
+                                            )?.rol_acceso || null}
+                                            departamentosLaborales={departamentosLaborales}
+                                            puestosLaborales={puestosLaborales}
+                                            onActualizar={refrescarEmpleados}
+                                            onPagoRegistrado={cargarHistorial}
+                                        />
                                     ))}
                                 </div>
                             )}
                         </>
                     )}
+
+                    {activeTab === "puestos" && <CatalogosLaborales />}
 
                     {/* ------- TAB CONTRATOS ------- */}
                     {activeTab === "contratos" && (
@@ -450,7 +470,9 @@ export default function RecursosHumanos() {
                                                     <td className="py-3 px-3 text-left">
                                                         <div className="flex flex-col">
                                                             <span className="font-medium">{d.empleado.nombre_completo}</span>
-                                                            <span className="text-xs text-subtitle">{d.empleado.puesto || "—"}</span>
+                                                            <span className="text-xs text-subtitle">
+                                                                {[d.empleado.puesto, d.empleado.departamento].filter(Boolean).join(" · ") || "—"}
+                                                            </span>
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-3 text-right">{fmtCordoba(d.calc.bruto)}</td>

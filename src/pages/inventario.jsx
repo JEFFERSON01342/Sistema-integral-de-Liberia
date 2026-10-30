@@ -3,7 +3,7 @@ import Tabs from "../components/tabs";
 import NuevoProducto from "../components/nuevoProducto";
 import EditarProducto from "../components/editarProducto";
 import { useState, useEffect, useCallback } from "react";
-import { Box, TrendingUp, TrendingDown, CircleAlert, ArrowLeftRight, Plus, ShoppingBasket, Pencil, Trash, Printer, Barcode, SlidersHorizontal, Building2 } from "lucide-react";
+import { Box, TrendingUp, TrendingDown, CircleAlert, ArrowLeftRight, Plus, ShoppingBasket, Pencil, Trash, Printer, Barcode, SlidersHorizontal, Building2, Tags } from "lucide-react";
 import { useProductos } from "../hooks/useProductos";
 import { useAuth } from "../contexts/authcontext";
 import { useEmpresa } from "../contexts/empresacontext";
@@ -11,6 +11,7 @@ import { supabase } from "../supabase/supabaseclient";
 import Swal from "sweetalert2";
 import { toast } from "react-hot-toast";
 import { generarCodigoEAN13, imprimirCodigosBarras } from "../utils/generarCodigoBarras";
+import GestionCategoriasModal from "../components/GestionCategoriasModal";
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -28,6 +29,8 @@ export default function Inventario() {
     const [sucursales, setSucursales] = useState([]);
     const [sucursalSel, setSucursalSel] = useState("");
     const [stockMap, setStockMap] = useState({});
+    const [categoriasModalOpen, setCategoriasModalOpen] = useState(false);
+    const puedeAdministrarCatalogos = rol === "admin" || rol === "superadmin";
 
     useEffect(() => {
         let cancelled = false;
@@ -337,6 +340,14 @@ export default function Inventario() {
                                     <p className="text-subtitle text-s">Administra el catálogo de productos del inventario</p>
                                 </div>
                                 <div className="flex flex-row gap-4">
+                                    {puedeAdministrarCatalogos && (
+                                        <button
+                                            onClick={() => setCategoriasModalOpen(true)}
+                                            className="bg-secondary/40 text-title border border-secondary px-4 py-2 rounded-lg cursor-pointer flex items-center gap-2 hover:opacity-95 hover:scale-110 transition"
+                                        >
+                                            <Tags size={18} /> Categorías
+                                        </button>
+                                    )}
                                     <button
                                         onClick={imprimirTodos}
                                         className="bg-secondary/40 text-title border border-secondary px-4 py-2 rounded-lg cursor-pointer flex items-center gap-2 hover:opacity-95 hover:scale-110 transition"
@@ -445,6 +456,9 @@ export default function Inventario() {
                             onProductoAgregado={agregarProducto} />
                     </div>
                 </div>
+            )}
+            {categoriasModalOpen && (
+                <GestionCategoriasModal onClose={() => setCategoriasModalOpen(false)} />
             )}
 
             {productoEditando && (

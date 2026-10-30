@@ -20,7 +20,6 @@ export function useGastosFijos() {
                 .from("gastos_fijos")
                 .select("*")
                 .eq("id_empresa", empresaId)
-                .eq("activa", true)
                 .order("descripcion", { ascending: true });
             if (error) throw error;
 
@@ -74,6 +73,71 @@ export function useGastosFijos() {
         }
     };
 
+    const actualizarGastoFijo = async (gastoData) => {
+        if (!empresaId || !gastoData.id_gasto_fijo) return { success: false };
+        setIsSaving(true);
+        try {
+            const { data, error } = await supabase
+                .from("gastos_fijos")
+                .update({
+                    descripcion: gastoData.descripcion.trim(),
+                    monto_estimado: Number(gastoData.monto_estimado),
+                    id_cuenta_gasto: Number(gastoData.id_cuenta_gasto),
+                })
+                .eq("id_empresa", empresaId)
+                .eq("id_gasto_fijo", gastoData.id_gasto_fijo)
+                .select("id_gasto_fijo")
+                .maybeSingle();
+            if (error) throw error;
+            if (!data) throw new Error("No se encontró el gasto fijo o no tienes permiso para modificarlo.");
+            await fetchGastosFijos();
+            return { success: true };
+        } catch (saveError) {
+            toast.error(`Error al actualizar gasto fijo: ${saveError.message}`);
+            return { success: false, message: saveError.message };
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const cambiarEstadoGastoFijo = async (gasto) => {
+        if (!empresaId || !gasto.id_gasto_fijo) return { success: false };
+        try {
+            const { data, error } = await supabase
+                .from("gastos_fijos")
+                .update({ activa: !gasto.activa })
+                .eq("id_empresa", empresaId)
+                .eq("id_gasto_fijo", gasto.id_gasto_fijo)
+                .select("id_gasto_fijo")
+                .maybeSingle();
+            if (error) throw error;
+            if (!data) throw new Error("No se encontró el gasto fijo o no tienes permiso para modificarlo.");
+            await fetchGastosFijos();
+            return { success: true };
+        } catch (saveError) {
+            return { success: false, message: saveError.message };
+        }
+    };
+
+    const eliminarGastoFijo = async (gasto) => {
+        if (!empresaId || !gasto.id_gasto_fijo) return { success: false };
+        try {
+            const { data, error } = await supabase
+                .from("gastos_fijos")
+                .delete()
+                .eq("id_empresa", empresaId)
+                .eq("id_gasto_fijo", gasto.id_gasto_fijo)
+                .select("id_gasto_fijo")
+                .maybeSingle();
+            if (error) throw error;
+            if (!data) throw new Error("No se encontró el gasto fijo o no tienes permiso para eliminarlo.");
+            await fetchGastosFijos();
+            return { success: true };
+        } catch (saveError) {
+            return { success: false, message: saveError.message };
+        }
+    };
+
     const registrarPagoGastoFijo = async (pago) => {
         setIsSaving(true);
         try {
@@ -102,6 +166,9 @@ export function useGastosFijos() {
         isLoading,
         isSaving,
         crearGastoFijo,
+        actualizarGastoFijo,
+        cambiarEstadoGastoFijo,
+        eliminarGastoFijo,
         registrarPagoGastoFijo,
         fetchGastosFijos,
     };

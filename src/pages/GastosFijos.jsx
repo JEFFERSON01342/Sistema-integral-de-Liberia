@@ -1,24 +1,35 @@
 // /pages/GastosFijos.jsx
 import { useState, useMemo } from "react";
-import { CreditCard, Plus, Zap } from "lucide-react";
+import { CreditCard, Plus, Pencil, Power, Trash2 } from "lucide-react";
 import { useGastosFijos } from "../hooks/useGastosFijos";
 import { format } from "date-fns/format";
 import NuevoGastoFijo from "../components/nuevoGastoFijo"; // Crearemos este
 import RegistrarPagoGastoFijo from "../components/registrarPagoGastoFijo"; // Crearemos este
 import StatsCards from "../components/statscards";
 import { Box, DollarSign, TrendingDown, CircleAlert } from "lucide-react";
+import Swal from "sweetalert2";
+import { toast } from "react-hot-toast";
 
 export default function GastosFijos() {
     const [isNuevoModalOpen, setIsNuevoModalOpen] = useState(false);
     const [isPagoModalOpen, setIsPagoModalOpen] = useState(false);
     const [gastoSeleccionado, setGastoSeleccionado] = useState(null);
+    const [gastoEditando, setGastoEditando] = useState(null);
 
-    const { gastosFijos, isLoading, isSaving, fetchGastosFijos } = useGastosFijos();
+    const {
+        gastosFijos,
+        isLoading,
+        isSaving,
+        fetchGastosFijos,
+        cambiarEstadoGastoFijo,
+        eliminarGastoFijo,
+    } = useGastosFijos();
 
     const { totalGastos, montoTotal } = useMemo(() => {
-        const monto = gastosFijos.reduce((sum, g) => sum + (g.monto_estimado || 0), 0);
+        const activos = gastosFijos.filter((gasto) => gasto.activa);
+        const monto = activos.reduce((sum, g) => sum + (g.monto_estimado || 0), 0);
         return {
-            totalGastos: gastosFijos.length,
+            totalGastos: activos.length,
             montoTotal: monto
         }
     }, [gastosFijos]);
@@ -26,6 +37,43 @@ export default function GastosFijos() {
     const handleAbrirPago = (gasto) => {
         setGastoSeleccionado(gasto);
         setIsPagoModalOpen(true);
+    };
+
+    const handleCambiarEstado = async (gasto) => {
+        const confirmacion = await Swal.fire({
+            title: gasto.activa ? "¿Desactivar gasto fijo?" : "¿Reactivar gasto fijo?",
+            text: gasto.activa
+                ? "No aparecerá como plantilla activa, pero sus pagos anteriores se conservarán."
+                : "Volverá a aparecer como plantilla de gasto.",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: gasto.activa ? "Desactivar" : "Reactivar",
+            cancelButtonText: "Cancelar",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+        if (!confirmacion.isConfirmed) return;
+        const resultado = await cambiarEstadoGastoFijo(gasto);
+        if (resultado.success) toast.success(gasto.activa ? "Gasto fijo desactivado." : "Gasto fijo reactivado.");
+        else toast.error(`No se pudo actualizar: ${resultado.message}`);
+    };
+
+    const handleEliminar = async (gasto) => {
+        const confirmacion = await Swal.fire({
+            title: "¿Eliminar plantilla de gasto?",
+            text: "Solo se eliminará si no tiene pagos asociados. Si tiene historial, desactívela.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Eliminar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#dc2626",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+        if (!confirmacion.isConfirmed) return;
+        const resultado = await eliminarGastoFijo(gasto);
+        if (resultado.success) toast.success("Plantilla eliminada.");
+        else toast.error("No se puede eliminar porque ya tiene pagos asociados. Desactívela para conservar el historial.");
     };
 
     return (
@@ -65,7 +113,8 @@ export default function GastosFijos() {
                                     <th className="py-3 px-2 text-center">Monto Estimado</th>
                                     <th className="py-3 px-2 text-center">Cuenta de Gasto</th>
                                     <th className="py-3 px-2 text-center">Último Registro</th>
-                                    <th className="py-3 px-2 text-center">Acción</th>
+                                    <th className="py-3 px-2 text-center">Estado</th>
+                                    <th className="py-3 px-2 text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -78,14 +127,24 @@ export default function GastosFijos() {
                                             {g.fecha_ultimo_registro ? format(new Date(g.fecha_ultimo_registro), 'dd/MM/yyyy') : 'Nunca'}
                                         </td>
                                         <td className="py-3 px-2 text-center">
-                                            <button
-                                                className="text-green-500 hover:text-green-400"
-                                                title="Registrar Pago"
-                                                onClick={() => handleAbrirPago(g)}
-                                                disabled={isSaving}
-                                            >
-                                                <CreditCard size={18} />
-                                            </button>
+                                            <span className={`rounded-full px-2 py-1 text-xs ${g.activa ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
+                                                {g.activa ? "Activo" : "Inactivo"}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 px-2 text-center">
+                                            <div className="flex items-center justify-center gap-3">
+                                                <button onClick={() => setGastoEditando(g)} title="Editar plantilla" className="text-blue-400"><Pencil size={17} /></button>
+                                                <button
+                                                    className="text-green-500 hover:text-green-400 disabled:opacity-40"
+                                                    title="Registrar Pago"
+                                                    onClick={() => handleAbrirPago(g)}
+                                                    disabled={isSaving || !g.activa}
+                                                >
+                                                    <CreditCard size={18} />
+                                                </button>
+                                                <button onClick={() => handleCambiarEstado(g)} title={g.activa ? "Desactivar" : "Reactivar"} className="text-amber-400"><Power size={17} /></button>
+                                                <button onClick={() => handleEliminar(g)} title="Eliminar si no tiene pagos" className="text-red-400"><Trash2 size={17} /></button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -102,6 +161,21 @@ export default function GastosFijos() {
                             setIsNuevoModalOpen(false);
                             fetchGastosFijos();
                         }} />
+                    </div>
+                </div>
+            )}
+
+            {gastoEditando && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 backdrop-blur-sm">
+                    <div className="absolute inset-0" onClick={() => setGastoEditando(null)} />
+                    <div className="relative z-10 mx-4">
+                        <NuevoGastoFijo
+                            gasto={gastoEditando}
+                            onClose={() => {
+                                setGastoEditando(null);
+                                fetchGastosFijos();
+                            }}
+                        />
                     </div>
                 </div>
             )}

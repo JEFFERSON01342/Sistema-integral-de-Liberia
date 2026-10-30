@@ -1,6 +1,16 @@
-import { CircleCheck, DollarSign, Pencil, Trash } from "lucide-react";
+import { Pencil, Power, Trash2 } from "lucide-react";
 
-export default function ClientesCards({ nombre, identificacion, correo, telefono, direccion, limite_credito }) {
+export default function ClientesCards({
+    nombre,
+    identificacion,
+    correo,
+    telefono,
+    limite_credito,
+    activo,
+    onEditar,
+    onCambiarEstado,
+    onEliminar,
+}) {
     return (
         // --- 1. Contenedor Principal Corregido ---
         // 'flex-col' (apilado) en móvil
@@ -12,12 +22,10 @@ export default function ClientesCards({ nombre, identificacion, correo, telefono
                 {/* 'flex-wrap' permite que los badges caigan a la siguiente línea si no hay espacio */}
                 <div className="flex flex-row gap-2 items-center mb-2 flex-wrap">
                     <h4 className="font-semibold text-title text-lg">{nombre}</h4>
-                    <div className="rounded-[20px] bg-button py-1 gap-2 px-2 text-button flex items-center justify-center text-xs">
-                        <CircleCheck className="text-button" size={14} />
-                        <span>Al dia</span>
-                    </div>
                     <div>
-                        <span className="text-button bg-button text-xs rounded-[20px] py-1 px-3">Activo</span>
+                        <span className={`text-xs rounded-[20px] py-1 px-3 ${activo ? "bg-button text-button" : "bg-red-600/20 text-red-400"}`}>
+                            {activo ? "Activo" : "Inactivo"}
+                        </span>
                     </div>
                 </div>
 
@@ -37,9 +45,13 @@ export default function ClientesCards({ nombre, identificacion, correo, telefono
             {/* --- 4. Sección de Botones Corregida --- */}
             {/* 'mt-4' (margen superior) en móvil, 'md:mt-0' (sin margen) en desktop */}
             <div className="flex flex-row gap-3 items-center mt-4 md:mt-0">
-                <button className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition"><DollarSign /></button>
-                <button className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition"><Pencil /></button>
-                <button className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition"><Trash /></button>
+                <button onClick={onEditar} title="Editar cliente" className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition"><Pencil size={17} /></button>
+                <button onClick={onCambiarEstado} title={activo ? "Desactivar cliente" : "Reactivar cliente"} className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition">
+                    <Power size={17} className={activo ? "text-amber-400" : "text-green-400"} />
+                </button>
+                <button onClick={onEliminar} title="Eliminar si no tiene ventas" className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition">
+                    <Trash2 size={17} className="text-red-400" />
+                </button>
             </div>
         </div>
     );

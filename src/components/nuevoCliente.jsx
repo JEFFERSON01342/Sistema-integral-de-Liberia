@@ -3,26 +3,30 @@ import { useState } from 'react';
 import { toast } from "react-hot-toast"
 import { useClientes } from "../hooks/useClientes"
 
-export default function NuevoCliente({ onClose }) {
-    const { addCliente } = useClientes();
-    const [nombre, setNombre] = useState('');
-    const [razonSocial, setRazonSocial] = useState('');
-    const [correoElectronico, setCorreoElectronico] = useState('');
-    const [telefono, setTelefono] = useState('');
-    const [limiteCredito, setLimiteCredito] = useState('');
+export default function NuevoCliente({ onClose, cliente = null }) {
+    const { addCliente, updateCliente } = useClientes();
+    const [nombre, setNombre] = useState(cliente?.nombre || '');
+    const [razonSocial, setRazonSocial] = useState(cliente?.identificacion || '');
+    const [correoElectronico, setCorreoElectronico] = useState(cliente?.correo || '');
+    const [telefono, setTelefono] = useState(cliente?.telefono || '');
+    const [limiteCredito, setLimiteCredito] = useState(cliente?.limite_credito ?? '');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const result = await addCliente({
+        const datosCliente = {
+            id_cliente: cliente?.id_cliente,
             nombre,
             identificacion: razonSocial,
             correo: correoElectronico,
             telefono,
             limite_credito: limiteCredito
-        });
+        };
+        const result = cliente
+            ? await updateCliente(datosCliente)
+            : await addCliente(datosCliente);
 
         if (result.success) {
-            toast.success("✅ Cliente agregado correctamente");
+            toast.success(cliente ? "Cliente actualizado." : "✅ Cliente agregado correctamente");
             onClose();
         } else {
             toast.error(`⚠️ ${result.message || "Error al agregar cliente"}`);
@@ -33,7 +37,7 @@ export default function NuevoCliente({ onClose }) {
         <>
             <div className="bg-primary text-title p-8 rounded-2xl w-full max-w-7xl shadow-lg animate-fade-in border-1 border-secondary">
                 <div className="flex justify-between items-center mb-8">
-                    <h3 className="text-2xl font-semibold">Nuevo Cliente</h3>
+                    <h3 className="text-2xl font-semibold">{cliente ? "Editar Cliente" : "Nuevo Cliente"}</h3>
                 </div>
                 <form onSubmit={handleSubmit}>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6">
@@ -67,7 +71,7 @@ export default function NuevoCliente({ onClose }) {
                         <button type="button" onClick={onClose} className="cursor-pointer bg-secondary text-button-text border border-secondary font-semibold py-2 px-6 rounded-lg hover:bg-button-cancel transition-transform duration-200 ease-in-out hover:scale-110">Cancelar</button>
                         <button type="submit" className="cursor-pointer bg-button text-button font-semibold py-2 px-2 rounded-lg hover:bg-[#E8E8E8] transition-transform duration-200 ease-in-out hover:scale-110 flex flex-row gap-2 items-center">
                             <Save />
-                            Guardar
+                            {cliente ? "Guardar cambios" : "Guardar"}
                         </button>
                     </div>
                 </form>
