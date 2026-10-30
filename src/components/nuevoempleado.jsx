@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react';
 import { toast } from "react-hot-toast"
 import { useEmpleados } from "../hooks/useEmpleados";
 import { supabase } from "../supabase/supabaseclient";
+import { useEmpresa } from "../contexts/empresacontext";
 
 export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
     const { addEmpleado } = useEmpleados();
+    const { empresaId } = useEmpresa();
 
     const [nombreCompleto, setNombreCompleto] = useState('');
     const [identificacion, setIdentificacion] = useState('');
@@ -17,20 +19,28 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
     const [fechaIngreso, setFechaIngreso] = useState('');
     const [cuentaBancaria, setCuentaBancaria] = useState('');
     const [estado, setEstado] = useState('Activo');
+    const [claseTrabajador, setClaseTrabajador] = useState('empleado');
     const [sucursales, setSucursales] = useState([]);
     const [sucursalId, setSucursalId] = useState(idSucursalFija ? String(idSucursalFija) : '');
 
     // Cargamos las sucursales disponibles (para que el superadmin pueda elegir).
     useEffect(() => {
         const cargarSucursales = async () => {
+            if (!empresaId) return;
             const { data, error } = await supabase
                 .from('sucursales')
-                .select('id, nombre')
+                .select('id_sucursal, nombre')
+                .eq('id_empresa', empresaId)
+                .eq('activa', true)
                 .order('nombre', { ascending: true });
-            if (!error) setSucursales(data || []);
+            if (error) {
+                toast.error(`No se pudieron cargar las sucursales: ${error.message}`);
+                return;
+            }
+            setSucursales(data || []);
         };
         cargarSucursales();
-    }, []);
+    }, [empresaId]);
 
     useEffect(() => {
         if (idSucursalFija) setSucursalId(String(idSucursalFija));
@@ -50,7 +60,9 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
             fecha_ingreso: fechaIngreso || null,
             cuenta_bancaria: cuentaBancaria,
             estado: estado,
-            id_sucursal: sucursalId ? Number(sucursalId) : null
+            id_sucursal: sucursalId ? Number(sucursalId) : null,
+            clase_trabajador: claseTrabajador,
+            frecuencia_pago: claseTrabajador === 'obrero' ? 'semanal' : 'quincenal',
         };
 
         const result = await addEmpleado(nuevoEmpleado);
@@ -125,6 +137,15 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
                         </div>
 
                         <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-title">Clase laboral para el límite de pago</label>
+                            <select value={claseTrabajador} onChange={(e) => setClaseTrabajador(e.target.value)} className="bg-input border border-secondary rounded-lg p-3">
+                                <option value="obrero">Obrero — pago semanal (máximo 7 días)</option>
+                                <option value="empleado">Empleado — pago quincenal (máximo 15 días)</option>
+                            </select>
+                            <span className="text-xs text-subtitle">Confirme la clasificación con RR. HH. conforme al puesto y las reglas aplicables.</span>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium text-title">Sucursal</label>
                             <select
                                 value={sucursalId}
@@ -134,7 +155,7 @@ export default function NuevoEmpleado({ onClose, idSucursalFija = null }) {
                             >
                                 <option value="">Sin asignar</option>
                                 {sucursales.map(s => (
-                                    <option key={s.id} value={s.id}>{s.nombre}</option>
+                                    <option key={s.id_sucursal} value={s.id_sucursal}>{s.nombre}</option>
                                 ))}
                             </select>
                             {idSucursalFija && (

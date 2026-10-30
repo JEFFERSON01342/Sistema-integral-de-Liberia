@@ -16,7 +16,13 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
     useEffect(() => {
         setLineas(Object.fromEntries((orden.lineas || []).map((linea) => [
             linea.id_detalle_orden,
-            { cantidad_aceptada: "", cantidad_rechazada: "", costo_unitario: "" },
+            {
+                cantidad_aceptada: "",
+                cantidad_rechazada: "",
+                costo_unitario: "",
+                lote_proveedor: "",
+                fecha_vencimiento: "",
+            },
         ])));
     }, [orden]);
 
@@ -30,10 +36,11 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
             }
             const { data, error } = await supabase
                 .from("ubicaciones_bodega")
-                .select("id_ubicacion, codigo, nombre")
+                .select("id_ubicacion, codigo, nombre, tipo_area")
                 .eq("id_empresa", empresaId)
                 .eq("id_sucursal", orden.id_sucursal)
                 .eq("activa", true)
+                .neq("tipo_area", "PICKING")
                 .order("codigo");
             if (error) {
                 toast.error(`No se pudieron cargar las ubicaciones: ${error.message}`);
@@ -58,6 +65,7 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
         const lineasRecepcion = [];
+        const lotes = [];
         for (const linea of orden.lineas || []) {
             const valores = lineas[linea.id_detalle_orden];
             const aceptada = Number(valores?.cantidad_aceptada || 0);
@@ -87,6 +95,13 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
                 cantidad_rechazada: Number(rechazada.toFixed(3)),
                 costo_unitario: Number(costo.toFixed(4)),
             });
+            if (aceptada > 0) {
+                lotes.push({
+                    id_detalle_orden: Number(linea.id_detalle_orden),
+                    lote_proveedor: valores.lote_proveedor.trim() || null,
+                    fecha_vencimiento: valores.fecha_vencimiento || null,
+                });
+            }
         }
 
         if (!idUbicacion || !lineasRecepcion.length) {
@@ -101,6 +116,7 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
             id_orden_compra: orden.id_orden_compra,
             id_ubicacion: Number(idUbicacion),
             lineas: lineasRecepcion,
+            lotes,
             clave_idempotencia: `recepcion-compra-${crypto.randomUUID()}`,
             documento_proveedor: formData.get("documento_proveedor"),
             observaciones: formData.get("observaciones"),
@@ -139,6 +155,8 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
                                 <th className="py-2 text-center">Aceptada</th>
                                 <th className="py-2 text-center">Rechazada</th>
                                 <th className="py-2 text-center">Costo unitario</th>
+                                <th className="py-2 text-left">Lote proveedor</th>
+                                <th className="py-2 text-left">Vencimiento</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -154,6 +172,12 @@ export default function RecibirOrdenCompra({ orden, onClose }) {
                                     </td>
                                     <td className="py-3">
                                         <input aria-label={`Costo unitario ${linea.nombre_producto}`} type="number" min="0.0001" step="0.0001" value={lineas[linea.id_detalle_orden]?.costo_unitario || ""} onChange={(event) => actualizarLinea(linea.id_detalle_orden, "costo_unitario", event.target.value)} className="bg-input border border-secondary rounded-lg p-2 w-32" />
+                                    </td>
+                                    <td className="py-3">
+                                        <input aria-label={`Lote proveedor ${linea.nombre_producto}`} type="text" maxLength={120} value={lineas[linea.id_detalle_orden]?.lote_proveedor || ""} onChange={(event) => actualizarLinea(linea.id_detalle_orden, "lote_proveedor", event.target.value)} className="bg-input border border-secondary rounded-lg p-2 w-36" />
+                                    </td>
+                                    <td className="py-3">
+                                        <input aria-label={`Vencimiento ${linea.nombre_producto}`} type="date" value={lineas[linea.id_detalle_orden]?.fecha_vencimiento || ""} onChange={(event) => actualizarLinea(linea.id_detalle_orden, "fecha_vencimiento", event.target.value)} className="bg-input border border-secondary rounded-lg p-2" />
                                     </td>
                                 </tr>
                             ))}

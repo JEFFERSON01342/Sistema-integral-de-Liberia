@@ -135,13 +135,14 @@ export function useCompras() {
     ));
 
     const recibirOrdenCompra = (recepcion) => ejecutarAccion("No se pudo registrar la recepción", () => (
-        supabase.rpc("recibir_orden_compra", {
+        supabase.rpc("registrar_recepcion_compra_con_lotes", {
             p_id_orden_compra: Number(recepcion.id_orden_compra),
             p_id_ubicacion: Number(recepcion.id_ubicacion),
             p_lineas: recepcion.lineas,
             p_clave_idempotencia: recepcion.clave_idempotencia,
             p_documento_proveedor: recepcion.documento_proveedor || null,
             p_observaciones: recepcion.observaciones || null,
+            p_lotes: recepcion.lotes,
         })
     ));
 

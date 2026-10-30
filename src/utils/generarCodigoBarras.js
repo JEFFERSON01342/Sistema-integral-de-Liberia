@@ -107,7 +107,7 @@ export function codigoBarrasDataURL(codigo, opciones = {}) {
 
 /**
  * Abre una ventana de impresión con uno o varios códigos de barras.
- * @param {Array<{codigo:string, nombre:string, precio?:number}>} items
+ * @param {Array<{codigo:string, nombre:string, precio?:number, detalles?:string[]}>} items
  */
 export function imprimirCodigosBarras(items = []) {
     const lista = Array.isArray(items) ? items : [items];
@@ -118,10 +118,14 @@ export function imprimirCodigosBarras(items = []) {
             if (!dataUrl) return "";
             const precio =
                 it.precio != null ? `<div class="precio">C$ ${Number(it.precio).toFixed(2)}</div>` : "";
+            const detalles = Array.isArray(it.detalles)
+                ? it.detalles.filter(Boolean).map((detalle) => `<div class="detalle">${escapeHtml(detalle)}</div>`).join("")
+                : "";
             return `
                 <div class="etiqueta">
                     <div class="nombre">${escapeHtml(it.nombre || "")}</div>
                     <img src="${dataUrl}" alt="${escapeHtml(it.codigo)}" />
+                    ${detalles}
                     ${precio}
                 </div>`;
         })
@@ -141,6 +145,7 @@ export function imprimirCodigosBarras(items = []) {
                     margin: 8px; page-break-inside: avoid;
                 }
                 .nombre { font-size: 12px; font-weight: 600; margin-bottom: 4px; text-align: center; max-width: 220px; }
+                .detalle { font-size: 10px; text-align: center; margin-top: 2px; }
                 .precio { font-size: 14px; font-weight: 700; margin-top: 2px; }
                 img { display: block; }
                 @media print { .no-print { display: none; } }

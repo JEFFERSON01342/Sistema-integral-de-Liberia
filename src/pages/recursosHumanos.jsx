@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import {
-    Users, DollarSign, Calendar, Building2, Plus, Calculator, Save,
-    Briefcase, TrendingUp, History, FileText, Plane, HardHat, Scale, ClipboardCheck
+    Users, DollarSign, CircleDollarSign, Calendar, Building2, Plus, Calculator, Save,
+    Briefcase, TrendingUp, History, FileText, Plane, HardHat, Scale, ClipboardCheck, Clock, Gift
 } from "lucide-react";
 import StatsCards from "../components/statscards";
 import Tabs from "../components/tabs";
@@ -9,17 +9,41 @@ import NuevoEmpleado from "../components/nuevoempleado";
 import EmpleadosCards from "../components/empleadosCards";
 import RRHHCrud from "../components/rrhh/RRHHCrud";
 import MarcoLegalInfo from "../components/rrhh/MarcoLegalInfo";
+import ConfiguracionContableNomina from "../components/rrhh/ConfiguracionContableNomina";
+import LiquidacionesLaborales from "../components/rrhh/LiquidacionesLaborales";
 import {
-    CONTRATOS_CFG, VACACIONES_CFG, SEGURIDAD_CFG, MARCO_LEGAL_CFG, CUMPLIMIENTO_CFG
+    CONTRATOS_CFG, VACACIONES_CFG, ASISTENCIAS_CFG, PRESTACIONES_CFG,
+    SEGURIDAD_CFG, MARCO_LEGAL_CFG, CUMPLIMIENTO_CFG
 } from "../components/rrhh/configsRRHH";
 import { useEmpleados } from "../hooks/useEmpleados";
 import { useEmpresa } from "../contexts/empresacontext";
 import { useAuth } from "../contexts/authcontext";
 import { supabase } from "../supabase/supabaseclient";
 import { registrarAuditoria } from "../utils/auditoria";
-import { calcularNomina, fmtCordoba } from "../utils/nominaNicaragua";
+import { calcularNominaPorPeriodo, fmtCordoba } from "../utils/nominaNicaragua";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
+
+const fechaLocal = (fecha) => {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+    const dia = String(fecha.getDate()).padStart(2, "0");
+    return `${anio}-${mes}-${dia}`;
+};
+
+const diasInclusivos = (inicio, fin) => {
+    if (!inicio || !fin) return null;
+    const inicioUTC = new Date(`${inicio}T00:00:00Z`);
+    const finUTC = new Date(`${fin}T00:00:00Z`);
+    if (
+        Number.isNaN(inicioUTC.getTime())
+        || Number.isNaN(finUTC.getTime())
+        || inicioUTC.toISOString().slice(0, 10) !== inicio
+        || finUTC.toISOString().slice(0, 10) !== fin
+        || finUTC < inicioUTC
+    ) return null;
+    return Math.round((finUTC - inicioUTC) / 86400000) + 1;
+};
 
 export default function RecursosHumanos() {
     const { rol, perfil } = useAuth();
@@ -28,7 +52,10 @@ export default function RecursosHumanos() {
     const tabs = [
         { key: "empleados", label: "Empleados", icon: <Users size={16} /> },
         { key: "contratos", label: "Contratos", icon: <FileText size={16} /> },
+        { key: "asistencia", label: "Asistencia", icon: <Clock size={16} /> },
         { key: "vacaciones", label: "Vacaciones y permisos", icon: <Plane size={16} /> },
+        { key: "prestaciones", label: "Prestaciones", icon: <Gift size={16} /> },
+        { key: "liquidaciones", label: "Liquidaciones", icon: <CircleDollarSign size={16} /> },
         { key: "seguridad", label: "Seguridad e higiene", icon: <HardHat size={16} /> },
         { key: "marco_legal", label: "Marco legal", icon: <Scale size={16} /> },
         { key: "cumplimiento", label: "Cumplimiento", icon: <ClipboardCheck size={16} /> },
@@ -37,6 +64,11 @@ export default function RecursosHumanos() {
     ];
     const [activeTab, setActiveTab] = useState("empleados");
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [configuracionContableAbierta, setConfiguracionContableAbierta] = useState(false);
+    const [tipoNomina, setTipoNomina] = useState("quincenal");
+    const [sucursalesNomina, setSucursalesNomina] = useState([]);
+    const [idSucursalNomina, setIdSucursalNomina] = useState("");
+    const [accionPeriodo, setAccionPeriodo] = useState(null);
 
     // Admin y gerente solo ven empleados de su sucursal asignada.
     const restringidoPorSucursal = rol === "admin" || rol === "gerente";
@@ -53,16 +85,59 @@ export default function RecursosHumanos() {
     }, [empleados]);
 
     // ---------- NÓMINA ----------
-    const empleadosNomina = useMemo(() => empleados.filter((e) => e.estado === "Activo"), [empleados]);
+    const hoy = new Date();
+    const [periodoInicio, setPeriodoInicio] = useState(fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1)));
+    const [periodoFin, setPeriodoFin] = useState(fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 15)));
+    const [guardando, setGuardando] = useState(false);
+    const diasPeriodo = diasInclusivos(periodoInicio, periodoFin);
+    const periodoValido = tipoNomina === "semanal"
+        ? diasPeriodo === 7
+        : diasPeriodo !== null && diasPeriodo <= 15;
+    const rolesPuedeContabilizar = ["superadmin", "admin"].includes(rol);
 
-    const detalleNomina = useMemo(
-        () =>
-            empleadosNomina.map((e) => ({
-                empleado: e,
-                calc: calcularNomina(Number(e.salario_mensual) || 0),
-            })),
-        [empleadosNomina]
-    );
+    useEffect(() => {
+        if (idSucursalFiltro) setIdSucursalNomina(String(idSucursalFiltro));
+        if (!empresaId) return;
+        const cargarSucursales = async () => {
+            let query = supabase
+                .from("sucursales")
+                .select("id_sucursal, nombre")
+                .eq("id_empresa", empresaId)
+                .eq("activa", true)
+                .order("nombre", { ascending: true });
+            if (idSucursalFiltro) query = query.eq("id_sucursal", idSucursalFiltro);
+            const { data, error } = await query;
+            if (error) {
+                toast.error(`No se pudieron cargar las sucursales para nómina: ${error.message}`);
+                return;
+            }
+            const disponibles = data || [];
+            setSucursalesNomina(disponibles);
+            if (!idSucursalFiltro && disponibles.length === 1) {
+                setIdSucursalNomina(String(disponibles[0].id_sucursal));
+            }
+        };
+        cargarSucursales();
+    }, [empresaId, idSucursalFiltro]);
+
+    const empleadosNomina = useMemo(() => empleados.filter((empleado) =>
+        empleado.estado === "Activo"
+        && idSucursalNomina
+        && Number(empleado.id_sucursal) === Number(idSucursalNomina)
+    ), [empleados, idSucursalNomina]);
+
+    const detalleNomina = useMemo(() => empleadosNomina
+        .filter((empleado) => empleado.frecuencia_pago === tipoNomina)
+        .filter(() => periodoValido)
+        .map((empleado) => ({
+            empleado,
+            calc: calcularNominaPorPeriodo(
+                Number(empleado.salario_mensual) || 0,
+                tipoNomina,
+                periodoInicio,
+                periodoFin
+            ),
+        })), [empleadosNomina, tipoNomina, periodoInicio, periodoFin, periodoValido]);
 
     const totales = useMemo(() => {
         return detalleNomina.reduce(
@@ -77,18 +152,19 @@ export default function RecursosHumanos() {
         );
     }, [detalleNomina]);
 
-    const hoy = new Date();
-    const [periodoInicio, setPeriodoInicio] = useState(
-        new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10)
-    );
-    const [periodoFin, setPeriodoFin] = useState(
-        new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().slice(0, 10)
-    );
-    const [guardando, setGuardando] = useState(false);
-
     const guardarNomina = async () => {
+        if (!idSucursalNomina) {
+            toast.error("Seleccione una sucursal para procesar la nómina.");
+            return;
+        }
+        if (!periodoValido) {
+            toast.error(tipoNomina === "semanal"
+                ? "El período semanal debe comprender exactamente 7 días."
+                : "El período quincenal debe comprender de 1 a 15 días consecutivos.");
+            return;
+        }
         if (detalleNomina.length === 0) {
-            toast.error("No hay empleados activos para procesar.");
+            toast.error(`No hay empleados activos con frecuencia ${tipoNomina} en esta sucursal.`);
             return;
         }
         const confirm = await Swal.fire({
@@ -107,26 +183,7 @@ export default function RecursosHumanos() {
 
         setGuardando(true);
         try {
-            const { data: periodo, error: errP } = await supabase
-                .from("nomina_periodos")
-                .insert({
-                    id_empresa: empresaId,
-                    id_sucursal: idSucursalFiltro,
-                    periodo_inicio: periodoInicio,
-                    periodo_fin: periodoFin,
-                    tipo: "mensual",
-                    estado: "procesada",
-                    total_bruto: totales.bruto,
-                    total_deducciones: totales.deducciones,
-                    total_neto: totales.neto,
-                    total_costo_empresa: totales.costoEmpresa,
-                })
-                .select()
-                .single();
-            if (errP) throw errP;
-
             const filas = detalleNomina.map((d) => ({
-                id_periodo: periodo.id,
                 id_empleado: d.empleado.id_empleado,
                 salario_bruto: d.calc.bruto,
                 inss_laboral: d.calc.inssLaboral,
@@ -138,8 +195,23 @@ export default function RecursosHumanos() {
                 vacaciones_provisionadas: d.calc.vacaciones,
                 costo_total_empresa: d.calc.costoTotalEmpresa,
             }));
-            const { error: errD } = await supabase.from("nomina_detalle").insert(filas);
-            if (errD) throw errD;
+            const { data: idPeriodo, error } = await supabase.rpc("procesar_nomina", {
+                p_datos: {
+                    id_empresa: empresaId,
+                    id_sucursal: Number(idSucursalNomina),
+                    periodo_inicio: periodoInicio,
+                    periodo_fin: periodoFin,
+                    tipo: tipoNomina,
+                    estado: "procesada",
+                    total_bruto: totales.bruto,
+                    total_deducciones: totales.deducciones,
+                    total_neto: totales.neto,
+                    total_costo_empresa: totales.costoEmpresa,
+                },
+                p_detalles: filas,
+            });
+            if (error) throw error;
+            if (!idPeriodo) throw new Error("La base de datos no devolvió el período procesado.");
 
             await registrarAuditoria(supabase, perfil, "PROCESAR_NOMINA", "Recursos Humanos",
                 `Nómina ${periodoInicio} a ${periodoFin} — ${filas.length} empleados, neto ${fmtCordoba(totales.neto)}`);
@@ -169,8 +241,7 @@ export default function RecursosHumanos() {
         if (idSucursalFiltro) query = query.eq("id_sucursal", idSucursalFiltro);
         const { data, error } = await query;
         if (error) {
-            console.error("Error cargando historial de nómina:", error.message);
-            setHistorial([]);
+            toast.error(`No se pudo cargar el historial de nómina: ${error.message}`);
         } else {
             setHistorial(data || []);
         }
@@ -180,6 +251,25 @@ export default function RecursosHumanos() {
     useEffect(() => {
         cargarHistorial();
     }, [cargarHistorial]);
+
+    const contabilizarPeriodo = async (idPeriodo, pagos = false) => {
+        setAccionPeriodo({ id: idPeriodo, pagos });
+        try {
+            const { data, error } = await supabase.rpc(
+                pagos ? "contabilizar_pagos_nomina" : "contabilizar_nomina",
+                { p_id_periodo: idPeriodo }
+            );
+            if (error) throw error;
+            toast.success(pagos
+                ? (data === 0 ? "No hay pagos pendientes de contabilizar." : `Se contabilizaron ${data} grupo(s) de pago.`)
+                : `Nómina contabilizada en el comprobante #${data}.`);
+            await cargarHistorial();
+        } catch (error) {
+            toast.error(`No se pudo contabilizar ${pagos ? "los pagos" : "la nómina"}: ${error.message}`);
+        } finally {
+            setAccionPeriodo(null);
+        }
+    };
 
     return (
         <div>
@@ -219,7 +309,7 @@ export default function RecursosHumanos() {
                             ) : (
                                 <div className="mt-8 flex flex-col gap-4">
                                     {empleados.map((empleado) => (
-                                        <EmpleadosCards key={empleado.id_empleado} {...empleado} rol={rol} onActualizar={refrescarEmpleados} />
+                                        <EmpleadosCards key={empleado.id_empleado} {...empleado} rol={rol} onActualizar={refrescarEmpleados} onPagoRegistrado={cargarHistorial} />
                                     ))}
                                 </div>
                             )}
@@ -231,9 +321,28 @@ export default function RecursosHumanos() {
                         <RRHHCrud {...CONTRATOS_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
                     )}
 
+                    {/* ------- TAB ASISTENCIA ------- */}
+                    {activeTab === "asistencia" && (
+                        <RRHHCrud {...ASISTENCIAS_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
                     {/* ------- TAB VACACIONES Y PERMISOS ------- */}
                     {activeTab === "vacaciones" && (
                         <RRHHCrud {...VACACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
+                    {/* ------- TAB PRESTACIONES ------- */}
+                    {activeTab === "prestaciones" && (
+                        <RRHHCrud {...PRESTACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                    )}
+
+                    {activeTab === "liquidaciones" && (
+                        <LiquidacionesLaborales
+                            empresaId={empresaId}
+                            idSucursalFiltro={idSucursalFiltro}
+                            empleados={empleados}
+                            rol={rol}
+                        />
                     )}
 
                     {/* ------- TAB SEGURIDAD E HIGIENE ------- */}
@@ -264,9 +373,31 @@ export default function RecursosHumanos() {
                             <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
                                 <div className="flex flex-col gap-1">
                                     <h3 className="text-title text-xl font-bold">Cálculo de Nómina</h3>
-                                    <p className="text-subtitle text-s">Según leyes laborales de Nicaragua (INSS 7% laboral · 21.5% patronal · INATEC 2% · IR progresivo)</p>
+                                    <p className="text-subtitle text-s">Estimación referencial; valide tasas y cálculos vigentes antes de pagar o declarar.</p>
                                 </div>
                                 <div className="flex flex-wrap gap-3 items-end">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs text-subtitle">Frecuencia</label>
+                                        <select value={tipoNomina} onChange={(e) => setTipoNomina(e.target.value)} className="bg-input border border-secondary rounded-lg p-2 text-sm">
+                                            <option value="semanal">Semanal</option>
+                                            <option value="quincenal">Quincenal</option>
+                                        </select>
+                                        <span className="text-xs text-subtitle">{tipoNomina === "semanal" ? "Períodos consecutivos de 7 días" : "Períodos consecutivos de hasta 15 días"}</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs text-subtitle">Sucursal</label>
+                                        <select
+                                            value={idSucursalNomina}
+                                            onChange={(e) => setIdSucursalNomina(e.target.value)}
+                                            disabled={Boolean(idSucursalFiltro)}
+                                            className="bg-input border border-secondary rounded-lg p-2 text-sm"
+                                        >
+                                            <option value="">Seleccione sucursal...</option>
+                                            {sucursalesNomina.map((sucursal) => (
+                                                <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <div className="flex flex-col gap-1">
                                         <label className="text-xs text-subtitle">Inicio período</label>
                                         <input type="date" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} className="bg-input border border-secondary rounded-lg p-2 text-sm [&::-webkit-calendar-picker-indicator]:invert" />
@@ -275,11 +406,24 @@ export default function RecursosHumanos() {
                                         <label className="text-xs text-subtitle">Fin período</label>
                                         <input type="date" value={periodoFin} onChange={(e) => setPeriodoFin(e.target.value)} className="bg-input border border-secondary rounded-lg p-2 text-sm [&::-webkit-calendar-picker-indicator]:invert" />
                                     </div>
-                                    <button onClick={guardarNomina} disabled={guardando} className="bg-button text-button flex h-10 gap-2 px-4 rounded-xl items-center cursor-pointer hover:scale-105 transition disabled:opacity-60">
+                                    <button onClick={guardarNomina} disabled={guardando || !periodoValido || !idSucursalNomina} className="bg-button text-button flex h-10 gap-2 px-4 rounded-xl items-center cursor-pointer hover:scale-105 transition disabled:opacity-60">
                                         <Save size={18} /> {guardando ? "Procesando..." : "Procesar Nómina"}
                                     </button>
                                 </div>
                             </div>
+                            <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+                                Las tasas heredadas de INSS/INATEC y la estimación de IR aún no están verificadas contra instrumentos oficiales vigentes. Revise los importes antes de pagar o declarar; este cálculo no certifica cumplimiento.
+                            </div>
+                            {!periodoValido && (
+                                <p className="mt-3 text-sm text-red-400">
+                                    {tipoNomina === "semanal"
+                                        ? "El período semanal debe comprender exactamente siete días."
+                                        : "El período para empleados debe comprender de uno a quince días consecutivos."}
+                                </p>
+                            )}
+                            {!idSucursalNomina && (
+                                <p className="mt-3 text-sm text-red-400">Seleccione una sucursal para limitar y contabilizar esta nómina.</p>
+                            )}
 
                             <div className="mt-6 overflow-x-auto">
                                 {detalleNomina.length === 0 ? (
@@ -290,11 +434,11 @@ export default function RecursosHumanos() {
                                             <tr className="border-b border-secondary/50 text-xs font-semibold text-subtitle">
                                                 <th className="py-3 px-3 text-left">Empleado</th>
                                                 <th className="py-3 px-3 text-right">Bruto</th>
-                                                <th className="py-3 px-3 text-right">INSS Lab. (7%)</th>
-                                                <th className="py-3 px-3 text-right">IR</th>
+                                                <th className="py-3 px-3 text-right">INSS laboral*</th>
+                                                <th className="py-3 px-3 text-right">IR estimado*</th>
                                                 <th className="py-3 px-3 text-right">Neto</th>
-                                                <th className="py-3 px-3 text-right">INSS Pat. (21.5%)</th>
-                                                <th className="py-3 px-3 text-right">INATEC (2%)</th>
+                                                <th className="py-3 px-3 text-right">INSS patronal*</th>
+                                                <th className="py-3 px-3 text-right">INATEC*</th>
                                                 <th className="py-3 px-3 text-right">Aguinaldo</th>
                                                 <th className="py-3 px-3 text-right">Vacac.</th>
                                                 <th className="py-3 px-3 text-right">Costo Empresa</th>
@@ -342,7 +486,15 @@ export default function RecursosHumanos() {
                         <>
                             <div className="flex flex-col gap-1 mb-4">
                                 <h3 className="text-title text-xl font-bold">Historial de Nóminas</h3>
-                                <p className="text-subtitle text-s">Períodos de nómina procesados</p>
+                                <p className="text-subtitle text-s">Cálculo, desembolso y contabilización son pasos separados.</p>
+                                {["superadmin", "admin"].includes(rol) && (
+                                    <button
+                                        onClick={() => setConfiguracionContableAbierta(true)}
+                                        className="mt-2 w-fit rounded-lg border border-secondary px-3 py-2 text-sm text-title hover:bg-secondary/20"
+                                    >
+                                        Configurar cuentas contables
+                                    </button>
+                                )}
                             </div>
                             <div className="overflow-x-auto">
                                 {loadingHist ? (
@@ -360,6 +512,7 @@ export default function RecursosHumanos() {
                                                 <th className="py-3 px-3 text-right">Neto Pagado</th>
                                                 <th className="py-3 px-3 text-right">Costo Empresa</th>
                                                 <th className="py-3 px-3 text-center">Estado</th>
+                                                <th className="py-3 px-3 text-center">Contabilización</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -377,6 +530,34 @@ export default function RecursosHumanos() {
                                                     <td className="py-3 px-3 text-right">{fmtCordoba(h.total_costo_empresa)}</td>
                                                     <td className="py-3 px-3 text-center">
                                                         <span className="bg-green-600/20 text-green-400 px-2 py-1 rounded-full text-xs font-semibold capitalize">{h.estado}</span>
+                                                    </td>
+                                                    <td className="py-3 px-3 text-center">
+                                                        <div className="flex justify-center gap-2">
+                                                            {rolesPuedeContabilizar && !h.id_comprobante_nomina && h.estado !== "anulada" && (
+                                                                <button
+                                                                    onClick={() => contabilizarPeriodo(h.id, false)}
+                                                                    disabled={Boolean(accionPeriodo)}
+                                                                    className="rounded border border-secondary px-2 py-1 text-xs hover:bg-secondary/20 disabled:opacity-50"
+                                                                >
+                                                                    {accionPeriodo?.id === h.id && !accionPeriodo.pagos ? "Contabilizando..." : "Contabilizar nómina"}
+                                                                </button>
+                                                            )}
+                                                            {rolesPuedeContabilizar && h.id_comprobante_nomina && ["procesada", "pagada"].includes(h.estado) && (
+                                                                <button
+                                                                    onClick={() => contabilizarPeriodo(h.id, true)}
+                                                                    disabled={Boolean(accionPeriodo)}
+                                                                    className="rounded border border-secondary px-2 py-1 text-xs hover:bg-secondary/20 disabled:opacity-50"
+                                                                >
+                                                                    {accionPeriodo?.id === h.id && accionPeriodo.pagos ? "Contabilizando..." : "Contabilizar pagos"}
+                                                                </button>
+                                                            )}
+                                                            {h.id_comprobante_nomina && (
+                                                                <span className="text-xs text-subtitle">Nómina #{h.id_comprobante_nomina}</span>
+                                                            )}
+                                                            {rolesPuedeContabilizar && !h.id_comprobante_nomina && ["procesada", "pagada"].includes(h.estado) && (
+                                                                <span className="text-xs text-subtitle">Contabilice la nómina primero</span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -396,6 +577,12 @@ export default function RecursosHumanos() {
                         <NuevoEmpleado onClose={() => { setIsModalOpen(false); refrescarEmpleados(); }} idSucursalFija={idSucursalFiltro} />
                     </div>
                 </div>
+            )}
+            {configuracionContableAbierta && (
+                <ConfiguracionContableNomina
+                    empresaId={empresaId}
+                    onClose={() => setConfiguracionContableAbierta(false)}
+                />
             )}
         </div>
     );

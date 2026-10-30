@@ -244,15 +244,16 @@ BEGIN
 
     IF EXISTS (
       WITH RECURSIVE ancestros AS (
-        SELECT c.id_cuenta, c.id_cuenta_padre
+        SELECT c.id_cuenta, c.id_cuenta_padre, ARRAY[c.id_cuenta] AS ruta
         FROM public.cuentas_contables AS c
         WHERE c.id_empresa = NEW.id_empresa
           AND c.id_cuenta = NEW.id_cuenta_padre
         UNION ALL
-        SELECT c.id_cuenta, c.id_cuenta_padre
+        SELECT c.id_cuenta, c.id_cuenta_padre, a.ruta || c.id_cuenta
         FROM public.cuentas_contables AS c
-        JOIN ancestros AS a ON a.id_cuenta = c.id_cuenta_padre
+        JOIN ancestros AS a ON c.id_cuenta = a.id_cuenta_padre
         WHERE c.id_empresa = NEW.id_empresa
+          AND NOT c.id_cuenta = ANY(a.ruta)
       )
       SELECT 1 FROM ancestros WHERE id_cuenta = NEW.id_cuenta
     ) THEN

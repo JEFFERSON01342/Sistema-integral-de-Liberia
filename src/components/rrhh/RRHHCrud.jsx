@@ -54,6 +54,7 @@ export default function RRHHCrud({
   moduloAuditoria = "Recursos Humanos",
   ordenarPor = "created_at",
   puedeEditar = true,
+  puedeEliminar = true,
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -74,12 +75,13 @@ export default function RRHHCrud({
     const { data, error } = await query.order(ordenarPor, { ascending: false });
     if (error) {
       console.error(`Error cargando ${tabla}:`, error.message);
+      toast.error(`No se pudo cargar ${titulo}: ${error.message}`);
       setRows([]);
     } else {
       setRows(data || []);
     }
     setLoading(false);
-  }, [tabla, empresaId, idSucursalFiltro, ordenarPor]);
+  }, [tabla, titulo, empresaId, idSucursalFiltro, ordenarPor]);
 
   useEffect(() => {
     cargar();
@@ -119,6 +121,9 @@ export default function RRHHCrud({
         return toast.error(`El campo "${c.label}" es obligatorio.`);
       }
     }
+    if (tabla === "prestaciones_laborales" && form.estado === "pagada" && !form.fecha_pago) {
+      return toast.error("Indique la fecha de pago para marcar una prestación como pagada.");
+    }
     setGuardando(true);
     try {
       const payload = { id_empresa: empresaId };
@@ -130,6 +135,10 @@ export default function RRHHCrud({
         if (c.type === "empleado" && v != null) v = Number(v);
         payload[c.name] = v;
       });
+      if ("id_empleado" in payload && payload.id_empleado != null) {
+        const empleado = empleados.find((item) => item.id_empleado === payload.id_empleado);
+        payload.id_sucursal = empleado?.id_sucursal ?? idSucursalFiltro ?? null;
+      }
 
       if (editando) {
         const { error } = await supabase.from(tabla).update(payload).eq(pk, editando[pk]);
@@ -239,8 +248,12 @@ export default function RRHHCrud({
                   {puedeEditar && (
                     <td className="py-3 px-3 text-center">
                       <div className="flex gap-3 justify-center">
-                        <button onClick={() => abrirEditar(row)} className="text-blue-400 hover:text-blue-300" title="Editar"><Pencil size={17} /></button>
-                        <button onClick={() => eliminar(row)} className="text-red-400 hover:text-red-300" title="Eliminar"><Trash2 size={17} /></button>
+                        {!(tabla === "prestaciones_laborales" && row.estado === "pagada") && (
+                          <button onClick={() => abrirEditar(row)} className="text-blue-400 hover:text-blue-300" title="Editar"><Pencil size={17} /></button>
+                        )}
+                        {puedeEliminar && (
+                          <button onClick={() => eliminar(row)} className="text-red-400 hover:text-red-300" title="Eliminar"><Trash2 size={17} /></button>
+                        )}
                       </div>
                     </td>
                   )}

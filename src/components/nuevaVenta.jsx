@@ -33,17 +33,61 @@ export default function NuevaVenta({ onClose }) {
   const [buscando, setBuscando] = useState(false);
   const codigoInputRef = useRef(null);
   const claveVentaRef = useRef(null);
+  const [cotizacion, setCotizacion] = useState(null);
+  const [cotizando, setCotizando] = useState(false);
+  const [errorCotizacion, setErrorCotizacion] = useState("");
 
-  const totalVenta = useMemo(
-    () => money(productosSeleccionados.reduce(
-      (total, item) => total + money(Number(item.precio) * Number(item.cantidad)),
-      0
-    )),
-    [productosSeleccionados]
-  );
+  const itemsPOS = useMemo(() => productosSeleccionados.map((item) => ({
+    id_producto: Number(item.id_producto),
+    cantidad: Number(item.cantidad),
+  })), [productosSeleccionados]);
+  const firmaItems = JSON.stringify(itemsPOS);
+  const cotizacionActual = cotizacion?.firma === firmaItems
+    && cotizacion?.idSesion === sesionCaja?.id_sesion
+    ? cotizacion
+    : null;
+  const itemsCotizados = cotizacionActual?.items || [];
+  const totalVenta = cotizacionActual ? money(cotizacionActual.total) : 0;
+  const ahorroVenta = cotizacionActual ? money(cotizacionActual.descuento_total) : 0;
   const cambio = metodoPago === "EFECTIVO"
     ? money(Math.max(0, Number(efectivoRecibido || 0) - totalVenta))
     : 0;
+
+  useEffect(() => {
+    if (!sesionCaja?.id_sesion || itemsPOS.length === 0) {
+      setCotizacion(null);
+      setCotizando(false);
+      setErrorCotizacion("");
+      return undefined;
+    }
+
+    let activo = true;
+    setCotizando(true);
+    setErrorCotizacion("");
+    supabase.rpc("cotizar_venta_pos", {
+      p_id_sesion: sesionCaja.id_sesion,
+      p_items: itemsPOS,
+    }).then(({ data, error }) => {
+      if (!activo) return;
+      if (error) throw error;
+      if (!data || !Array.isArray(data.items) || !Number.isFinite(Number(data.total))) {
+        throw new Error("La base de datos no devolvió una cotización válida.");
+      }
+      setCotizacion({
+        ...data,
+        firma: firmaItems,
+        idSesion: sesionCaja.id_sesion,
+      });
+    }).catch((error) => {
+      if (!activo) return;
+      setCotizacion(null);
+      setErrorCotizacion(error.message || "No se pudo cotizar la venta.");
+    }).finally(() => {
+      if (activo) setCotizando(false);
+    });
+
+    return () => { activo = false; };
+  }, [firmaItems, itemsPOS, sesionCaja?.id_sesion]);
 
   useEffect(() => {
     let activo = true;
@@ -279,6 +323,10 @@ export default function NuevaVenta({ onClose }) {
       toast.error("Agrega al menos un producto.");
       return;
     }
+    if (!cotizacionActual || cotizando || errorCotizacion) {
+      toast.error(errorCotizacion || "Espera a que se confirme el precio de la venta.");
+      return;
+    }
     if (metodoPago === "EFECTIVO" && Number(efectivoRecibido) < totalVenta) {
       toast.error("El efectivo recibido no cubre el total de la venta.");
       return;
@@ -289,10 +337,7 @@ export default function NuevaVenta({ onClose }) {
       monto: totalVenta,
       ...(metodoPago === "EFECTIVO" ? { efectivo_recibido: money(efectivoRecibido) } : {}),
     };
-    const items = productosSeleccionados.map((producto) => ({
-      id_producto: Number(producto.id_producto),
-      cantidad: Number(producto.cantidad),
-    }));
+    const items = itemsPOS;
     const huellaSolicitud = JSON.stringify({
       id_sesion: sesionCaja.id_sesion,
       id_cliente: clienteSel?.id_cliente || null,
@@ -317,6 +362,19 @@ export default function NuevaVenta({ onClose }) {
 
     if (typeof idVenta !== "number" || !Number.isFinite(idVenta)) {
       toast.error(`No se pudo registrar la venta: ${idVenta?.error || "Error desconocido"}`);
+      try {
+        const { data, error } = await supabase.rpc("cotizar_venta_pos", {
+          p_id_sesion: sesionCaja.id_sesion,
+          p_items: itemsPOS,
+        });
+        if (error) throw error;
+        if (!data || !Array.isArray(data.items)) {
+          throw new Error("La base de datos no devolvió una cotización válida.");
+        }
+        setCotizacion({ ...data, firma: firmaItems, idSesion: sesionCaja.id_sesion });
+      } catch (error) {
+        setErrorCotizacion(error.message || "No se pudo actualizar la cotización.");
+      }
       return;
     }
 
@@ -333,11 +391,16 @@ export default function NuevaVenta({ onClose }) {
         sucursal: perfil?.sucursal_nombre || "",
         canal: "sucursal",
         pago: "sucursal",
-        items: productosSeleccionados.map((item) => ({
-          nombre: item.nombre,
-          cantidad: item.cantidad,
-          precio: item.precio,
-        })),
+        items: productosSeleccionados.map((item) => {
+          const itemCotizado = itemsCotizados.find(
+            (linea) => Number(linea.id_producto) === Number(item.id_producto)
+          );
+          return {
+            nombre: item.nombre,
+            cantidad: item.cantidad,
+            precio: Number(itemCotizado?.precio_unitario ?? item.precio),
+          };
+        }),
         plazoDias: 0,
         vencimiento: "",
       }, "open");
@@ -478,12 +541,24 @@ export default function NuevaVenta({ onClose }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {productosSeleccionados.map((item) => (
+                  {productosSeleccionados.map((item) => {
+                    const cotizado = itemsCotizados.find(
+                      (linea) => Number(linea.id_producto) === Number(item.id_producto)
+                    );
+                    const precioFinal = Number(cotizado?.precio_unitario ?? item.precio);
+                    return (
                     <tr key={item.id_producto} className="border-b border-secondary/50">
                       <td className="p-2">{item.nombre}</td>
-                      <td className="p-2 text-right">C$ {Number(item.precio).toFixed(2)}</td>
+                      <td className="p-2 text-right">
+                        {cotizado?.descuento_linea > 0 ? (
+                          <span className="flex flex-col">
+                            <span className="text-xs text-subtitle line-through">C$ {Number(cotizado.precio_lista_unitario).toFixed(2)}</span>
+                            <span className="text-green-600 font-semibold">C$ {precioFinal.toFixed(2)}</span>
+                          </span>
+                        ) : `C$ ${Number(cotizado?.precio_lista_unitario ?? item.precio).toFixed(2)}`}
+                      </td>
                       <td className="p-2 text-right">{item.cantidad}</td>
-                      <td className="p-2 text-right">C$ {(item.precio * item.cantidad).toFixed(2)}</td>
+                      <td className="p-2 text-right">C$ {Number(cotizado?.subtotal_linea ?? (precioFinal * item.cantidad)).toFixed(2)}</td>
                       <td className="p-2 text-center">
                         <button type="button" onClick={() => setProductosSeleccionados((items) => items.filter((producto) => producto.id_producto !== item.id_producto))}
                           className="text-red-500 hover:text-red-700" aria-label={`Quitar ${item.nombre}`}>
@@ -491,7 +566,8 @@ export default function NuevaVenta({ onClose }) {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -518,7 +594,15 @@ export default function NuevaVenta({ onClose }) {
           </div>
 
           <div className="flex flex-col items-end mt-5 gap-1">
-            <h3 className="text-title font-bold text-2xl">Total: C$ {totalVenta.toFixed(2)}</h3>
+            {ahorroVenta > 0 && (
+              <p className="text-sm text-green-600 font-semibold">
+                Ahorro promocional: C$ {ahorroVenta.toFixed(2)}
+              </p>
+            )}
+            <h3 className="text-title font-bold text-2xl">
+              Total: {cotizando ? "Cotizando..." : `C$ ${totalVenta.toFixed(2)}`}
+            </h3>
+            {errorCotizacion && <p role="alert" className="text-sm text-red-500">{errorCotizacion}</p>}
             {metodoPago === "EFECTIVO" && Number(efectivoRecibido) >= totalVenta && (
               <p className="text-subtitle">Cambio: C$ {cambio.toFixed(2)}</p>
             )}
@@ -526,7 +610,7 @@ export default function NuevaVenta({ onClose }) {
 
           <div className="flex justify-end gap-3 mt-8">
             <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
-            <button type="submit" disabled={guardando || productosSeleccionados.length === 0}
+            <button type="submit" disabled={guardando || cotizando || !cotizacionActual || productosSeleccionados.length === 0}
               className="btn-primary disabled:opacity-50">
               <Save size={18} /> {guardando ? "Registrando..." : "Registrar venta"}
             </button>

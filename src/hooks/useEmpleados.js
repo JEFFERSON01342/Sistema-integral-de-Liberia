@@ -41,6 +41,7 @@ export function useEmpleados(idSucursal = null) {
         } catch (err) {
             console.error("Error al cargar empleados:", err.message);
             setError(err.message);
+            toast.error(`No se pudieron cargar los empleados: ${err.message}`);
         } finally {
             setIsLoading(false);
         }

@@ -78,6 +78,70 @@ export const VACACIONES_CFG = {
   ],
 };
 
+export const ASISTENCIAS_CFG = {
+  tabla: "asistencias",
+  titulo: "Asistencia",
+  subtitulo: "Registro diario de entradas, salidas e incidencias",
+  ordenarPor: "fecha",
+  campos: [
+    { name: "id_empleado", label: "Empleado", type: "empleado", required: true },
+    { name: "fecha", label: "Fecha", type: "date", required: true },
+    { name: "hora_entrada", label: "Hora de entrada", type: "time" },
+    { name: "hora_salida", label: "Hora de salida", type: "time" },
+    { name: "estado", label: "Estado", type: "select", default: "presente", options: [
+      { value: "presente", label: "Presente" },
+      { value: "ausente", label: "Ausente" },
+      { value: "tardanza", label: "Tardanza" },
+      { value: "permiso", label: "Permiso" },
+      { value: "incapacidad", label: "Incapacidad" },
+    ] },
+    { name: "observaciones", label: "Observaciones", type: "textarea", full: true },
+  ],
+  columnas: [
+    { name: "id_empleado", label: "Empleado", type: "empleado" },
+    { name: "fecha", label: "Fecha", type: "date", align: "center" },
+    { name: "hora_entrada", label: "Entrada", align: "center" },
+    { name: "hora_salida", label: "Salida", align: "center" },
+    { name: "estado", label: "Estado", type: "badge", align: "center" },
+  ],
+};
+
+export const PRESTACIONES_CFG = {
+  puedeEliminar: false,
+  tabla: "prestaciones_laborales",
+  titulo: "Prestaciones",
+  subtitulo: "Registro de provisiones y pagos; los importes requieren validación laboral",
+  ordenarPor: "created_at",
+  campos: [
+    { name: "id_empleado", label: "Empleado", type: "empleado", required: true },
+    { name: "tipo", label: "Tipo", type: "select", default: "aguinaldo", options: [
+      { value: "aguinaldo", label: "Aguinaldo" },
+      { value: "vacaciones", label: "Vacaciones" },
+      { value: "indemnizacion", label: "Indemnización" },
+      { value: "bono", label: "Bono" },
+      { value: "otro", label: "Otro" },
+    ] },
+    { name: "periodo_inicio", label: "Inicio del período", type: "date" },
+    { name: "periodo_fin", label: "Fin del período", type: "date" },
+    { name: "monto", label: "Monto (C$)", type: "money", default: 0, required: true },
+    { name: "estado", label: "Estado", type: "select", default: "provisionada", options: [
+      { value: "provisionada", label: "Provisionada" },
+      { value: "pagada", label: "Pagada" },
+      { value: "anulada", label: "Anulada" },
+    ] },
+    { name: "fecha_pago", label: "Fecha de pago", type: "date" },
+    { name: "concepto", label: "Concepto", type: "textarea", full: true },
+  ],
+  columnas: [
+    { name: "id_empleado", label: "Empleado", type: "empleado" },
+    { name: "tipo", label: "Tipo", type: "badge" },
+    { name: "periodo_inicio", label: "Inicio", type: "date", align: "center" },
+    { name: "periodo_fin", label: "Fin", type: "date", align: "center" },
+    { name: "monto", label: "Monto", type: "money", align: "right" },
+    { name: "estado", label: "Estado", type: "badge", align: "center" },
+  ],
+};
+
 export const SEGURIDAD_CFG = {
   tabla: "seguridad_higiene",
   titulo: "Seguridad e Higiene",
