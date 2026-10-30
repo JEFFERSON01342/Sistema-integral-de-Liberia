@@ -69,6 +69,7 @@ export default function RecursosHumanos() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [configuracionContableAbierta, setConfiguracionContableAbierta] = useState(false);
     const [tipoNomina, setTipoNomina] = useState("quincenal");
+    const [descuentosAdicionales, setDescuentosAdicionales] = useState({});
     const [sucursalesNomina, setSucursalesNomina] = useState([]);
     const [idSucursalNomina, setIdSucursalNomina] = useState("");
     const [accionPeriodo, setAccionPeriodo] = useState(null);
@@ -96,6 +97,9 @@ export default function RecursosHumanos() {
     const [periodoInicio, setPeriodoInicio] = useState(fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1)));
     const [periodoFin, setPeriodoFin] = useState(fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 15)));
     const [guardando, setGuardando] = useState(false);
+    useEffect(() => {
+        setDescuentosAdicionales({});
+    }, [tipoNomina, idSucursalNomina, periodoInicio, periodoFin]);
     const diasPeriodo = diasInclusivos(periodoInicio, periodoFin);
     const periodoValido = tipoNomina === "semanal"
         ? diasPeriodo === 7
@@ -142,9 +146,10 @@ export default function RecursosHumanos() {
                 Number(empleado.salario_mensual) || 0,
                 tipoNomina,
                 periodoInicio,
-                periodoFin
+                periodoFin,
+                Number(descuentosAdicionales[empleado.id_empleado]) || 0
             ),
-        })), [empleadosNomina, tipoNomina, periodoInicio, periodoFin, periodoValido]);
+        })), [empleadosNomina, tipoNomina, periodoInicio, periodoFin, periodoValido, descuentosAdicionales]);
 
     const totales = useMemo(() => {
         return detalleNomina.reduce(
@@ -174,6 +179,18 @@ export default function RecursosHumanos() {
             toast.error(`No hay empleados activos con frecuencia ${tipoNomina} en esta sucursal.`);
             return;
         }
+        const descuentoInvalido = detalleNomina.find(({ empleado, calc }) => {
+            const valor = descuentosAdicionales[empleado.id_empleado] ?? "";
+            const descuento = valor === "" ? 0 : Number(valor);
+            return !Number.isFinite(descuento)
+                || descuento < 0
+                || descuento > calc.bruto - calc.inssLaboral - calc.irMensual
+                || calc.salarioNeto < 0;
+        });
+        if (descuentoInvalido) {
+            toast.error(`Revise el descuento adicional de ${descuentoInvalido.empleado.nombre_completo}: debe ser válido y no puede dejar el neto por debajo de C$0.00.`);
+            return;
+        }
         const confirm = await Swal.fire({
             title: "¿Procesar nómina?",
             text: `Se generará la nómina de ${detalleNomina.length} empleado(s) del período ${periodoInicio} al ${periodoFin}.`,
@@ -195,6 +212,7 @@ export default function RecursosHumanos() {
                 salario_bruto: d.calc.bruto,
                 inss_laboral: d.calc.inssLaboral,
                 ir_mensual: d.calc.irMensual,
+                otros_descuentos: d.calc.otrosDescuentos,
                 salario_neto: d.calc.salarioNeto,
                 inss_patronal: d.calc.inssPatronal,
                 inatec: d.calc.inatec,
@@ -434,6 +452,9 @@ export default function RecursosHumanos() {
                             <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
                                 Las tasas heredadas de INSS/INATEC y la estimación de IR aún no están verificadas contra instrumentos oficiales vigentes. Revise los importes antes de pagar o declarar; este cálculo no certifica cumplimiento.
                             </div>
+                            <p className="mt-3 text-sm text-subtitle">
+                                El descuento adicional es opcional, se captura por empleado y período y empieza en C$0.00. Se suma a las deducciones y reduce el neto; no cambia el salario del empleado ni nóminas anteriores.
+                            </p>
                             {!periodoValido && (
                                 <p className="mt-3 text-sm text-red-400">
                                     {tipoNomina === "semanal"
@@ -449,13 +470,14 @@ export default function RecursosHumanos() {
                                 {detalleNomina.length === 0 ? (
                                     <p className="p-4 text-center text-subtitle">No hay empleados activos para procesar.</p>
                                 ) : (
-                                    <table className="min-w-[1000px] w-full text-title text-sm">
+                                    <table className="min-w-[1120px] w-full text-title text-sm">
                                         <thead className="bg-secondary/10">
                                             <tr className="border-b border-secondary/50 text-xs font-semibold text-subtitle">
                                                 <th className="py-3 px-3 text-left">Empleado</th>
                                                 <th className="py-3 px-3 text-right">Bruto</th>
                                                 <th className="py-3 px-3 text-right">INSS laboral*</th>
                                                 <th className="py-3 px-3 text-right">IR estimado*</th>
+                                                <th className="py-3 px-3 text-right">Descuento adicional</th>
                                                 <th className="py-3 px-3 text-right">Neto</th>
                                                 <th className="py-3 px-3 text-right">INSS patronal*</th>
                                                 <th className="py-3 px-3 text-right">INATEC*</th>
@@ -478,6 +500,22 @@ export default function RecursosHumanos() {
                                                     <td className="py-3 px-3 text-right">{fmtCordoba(d.calc.bruto)}</td>
                                                     <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.inssLaboral)}</td>
                                                     <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.irMensual)}</td>
+                                                    <td className="py-3 px-3 text-right">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max={Math.max(0, d.calc.bruto - d.calc.inssLaboral - d.calc.irMensual)}
+                                                            step="0.01"
+                                                            value={descuentosAdicionales[d.empleado.id_empleado] ?? ""}
+                                                            onChange={(event) => setDescuentosAdicionales((actuales) => ({
+                                                                ...actuales,
+                                                                [d.empleado.id_empleado]: event.target.value,
+                                                            }))}
+                                                            aria-label={`Descuento adicional para ${d.empleado.nombre_completo}`}
+                                                            placeholder="0.00"
+                                                            className="w-32 rounded border border-secondary bg-input px-2 py-1 text-right text-title"
+                                                        />
+                                                    </td>
                                                     <td className="py-3 px-3 text-right text-green-400 font-semibold">{fmtCordoba(d.calc.salarioNeto)}</td>
                                                     <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.inssPatronal)}</td>
                                                     <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.inatec)}</td>
@@ -491,7 +529,7 @@ export default function RecursosHumanos() {
                                             <tr className="border-t-2 border-secondary font-bold text-title">
                                                 <td className="py-3 px-3 text-left">TOTALES</td>
                                                 <td className="py-3 px-3 text-right">{fmtCordoba(totales.bruto)}</td>
-                                                <td className="py-3 px-3 text-right" colSpan={2}>-{fmtCordoba(totales.deducciones)}</td>
+                                                <td className="py-3 px-3 text-right" colSpan={3}>-{fmtCordoba(totales.deducciones)}</td>
                                                 <td className="py-3 px-3 text-right text-green-400">{fmtCordoba(totales.neto)}</td>
                                                 <td className="py-3 px-3 text-right" colSpan={4}></td>
                                                 <td className="py-3 px-3 text-right">{fmtCordoba(totales.costoEmpresa)}</td>

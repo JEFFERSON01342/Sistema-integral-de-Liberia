@@ -97,7 +97,13 @@ function factorQuincenalPorPeriodo(fechaInicio, fechaFin) {
     return factor;
 }
 
-export function calcularNominaPorPeriodo(salarioMensual, tipoPeriodo, fechaInicio, fechaFin) {
+export function calcularNominaPorPeriodo(
+    salarioMensual,
+    tipoPeriodo,
+    fechaInicio,
+    fechaFin,
+    otrosDescuentosPeriodo = 0
+) {
     let factor;
     if (tipoPeriodo === "semanal") {
         const inicio = parsearFechaISO(fechaInicio);
@@ -116,10 +122,13 @@ export function calcularNominaPorPeriodo(salarioMensual, tipoPeriodo, fechaInici
     }
 
     const mensual = calcularNomina(salarioMensual);
+    const otrosDescuentos = redondearMoneda(Number(otrosDescuentosPeriodo) || 0);
+    if (otrosDescuentos < 0) {
+        throw new Error("Los otros descuentos no pueden ser negativos.");
+    }
     const escalar = (monto) => redondearMoneda(monto * factor);
     const bruto = escalar(mensual.bruto);
     const otrosIngresos = escalar(mensual.otrosIngresos);
-    const otrosDescuentos = escalar(mensual.otrosDescuentos);
     const inssLaboral = escalar(mensual.inssLaboral);
     const irMensual = escalar(mensual.irMensual);
     const inssPatronal = escalar(mensual.inssPatronal);
