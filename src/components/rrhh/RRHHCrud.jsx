@@ -48,6 +48,8 @@ export default function RRHHCrud({
   empresaId,
   idSucursalFiltro,
   empleados = [],
+  puestos = [],
+  departamentos = [],
   campos = [],
   columnas = [],
   perfil,
@@ -107,6 +109,10 @@ export default function RRHHCrud({
     campos.forEach((c) => {
       let v = row[c.name];
       if (c.type === "date" && v) v = String(v).slice(0, 10);
+      if (c.type === "puesto" && v) {
+        const puesto = puestos.find((item) => item.nombre.trim().toLowerCase() === String(v).trim().toLowerCase());
+        v = puesto ? String(puesto.id_puesto) : `__historico__${v}`;
+      }
       f[c.name] = v ?? "";
     });
     setForm(f);
@@ -133,6 +139,11 @@ export default function RRHHCrud({
         if (v === "") v = null;
         if ((c.type === "number" || c.type === "money") && v != null) v = Number(v);
         if (c.type === "empleado" && v != null) v = Number(v);
+        if (c.type === "puesto" && v != null) {
+          v = String(v).startsWith("__historico__")
+            ? String(v).slice("__historico__".length)
+            : puestos.find((puesto) => String(puesto.id_puesto) === String(v))?.nombre ?? null;
+        }
         payload[c.name] = v;
       });
       if ("id_empleado" in payload && payload.id_empleado != null) {
@@ -287,6 +298,23 @@ export default function RRHHCrud({
                     <select value={form[c.name] ?? ""} onChange={(e) => setForm({ ...form, [c.name]: e.target.value })} className="bg-input border border-secondary rounded-lg p-3 text-sm">
                       <option value="">{c.required ? "Seleccione empleado…" : "— (ninguno) —"}</option>
                       {empleados.map((e) => <option key={e.id_empleado} value={e.id_empleado}>{e.nombre_completo}</option>)}
+                    </select>
+                  ) : c.type === "puesto" ? (
+                    <select value={form[c.name] ?? ""} onChange={(e) => setForm({ ...form, [c.name]: e.target.value })} className="bg-input border border-secondary rounded-lg p-3 text-sm">
+                      <option value="">Seleccione un puesto…</option>
+                      {String(form[c.name] || "").startsWith("__historico__") && (
+                        <option value={form[c.name]}>
+                          {`Cargo guardado: ${String(form[c.name]).slice("__historico__".length)} (sin puesto activo en el catálogo)`}
+                        </option>
+                      )}
+                      {puestos.map((puesto) => (
+                        <option key={puesto.id_puesto} value={puesto.id_puesto}>
+                          {puesto.nombre}
+                          {departamentos.find((departamento) => Number(departamento.id_departamento) === Number(puesto.id_departamento))
+                            ? ` — ${departamentos.find((departamento) => Number(departamento.id_departamento) === Number(puesto.id_departamento)).nombre}`
+                            : ""}
+                        </option>
+                      ))}
                     </select>
                   ) : (
                     <input

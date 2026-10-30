@@ -8,7 +8,7 @@ export const CONTRATOS_CFG = {
   ordenarPor: "fecha_inicio",
   campos: [
     { name: "id_empleado", label: "Empleado", type: "empleado", required: true },
-    { name: "cargo", label: "Cargo", type: "text" },
+    { name: "cargo", label: "Cargo", type: "puesto", required: true },
     { name: "tipo_contrato", label: "Tipo de contrato", type: "select", default: "indefinido", options: [
       { value: "indefinido", label: "Indefinido" },
       { value: "determinado", label: "Tiempo determinado" },

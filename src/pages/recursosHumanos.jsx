@@ -84,6 +84,7 @@ export default function RecursosHumanos() {
         departamentos: departamentosLaborales,
         puestos: puestosLaborales,
     } = useCatalogosLaborales({ incluirInactivos: true });
+    const puestosActivos = puestosLaborales.filter((puesto) => puesto.activo);
     const refrescarEmpleados = () => { fetchEmpleados(); fetchTodos(); };
 
     const { empleadosActivos, nominaMensual } = useMemo(() => {
@@ -378,7 +379,15 @@ export default function RecursosHumanos() {
 
                     {/* ------- TAB CONTRATOS ------- */}
                     {activeTab === "contratos" && (
-                        <RRHHCrud {...CONTRATOS_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                        <RRHHCrud
+                            {...CONTRATOS_CFG}
+                            empresaId={empresaId}
+                            idSucursalFiltro={idSucursalFiltro}
+                            empleados={empleados}
+                            puestos={puestosActivos}
+                            departamentos={departamentosLaborales}
+                            perfil={perfil}
+                        />
                     )}
 
                     {/* ------- TAB ASISTENCIA ------- */}
