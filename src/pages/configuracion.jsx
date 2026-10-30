@@ -257,7 +257,7 @@ function TabApariencia({ t }) {
                         <div className="rounded-xl overflow-hidden border border-secondary flex h-72">
                             <div className="w-2/5 p-3 flex flex-col gap-1.5" style={{ background: sb.bg }}>
                                 <div className="flex items-center gap-2 mb-2">
-                                    <img src="/logo-libreria.png" alt="" className="h-6 w-6 object-contain" />
+                                    <img src="/brand-mark.svg" alt="" className="h-6 w-6 object-contain" />
                                     <span className="text-[0.65rem] font-bold text-white truncate">Lisjuashde</span>
                                 </div>
                                 {["Ventas", "Inventario", "Finanzas", "Reportes"].map((x, i) => (

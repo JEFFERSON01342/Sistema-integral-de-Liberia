@@ -71,7 +71,7 @@ export default function Login() {
 
                 {/* Logo + nombre */}
                 <div className="relative z-10 flex items-center gap-3">
-                    <img src="/logo-libreria.png" alt="Logo Librería Lisjuashde" className="h-14 w-14 object-contain" />
+                    <img src="/brand-mark.svg" alt="Logo Librería Lisjuashde" className="h-14 w-14 object-contain" />
                     <span className="text-white text-xl font-bold tracking-tight">Librería Lisjuashde</span>
                 </div>
 
@@ -118,7 +118,7 @@ export default function Login() {
 
                     {/* Logo (visible solo en móvil / tablet) */}
                     <div className="flex lg:hidden flex-col items-center text-center gap-2">
-                        <img src="/logo-libreria.png" alt="Logo Librería Lisjuashde" className="h-20 w-auto object-contain" />
+                        <img src="/brand-mark.svg" alt="Logo Librería Lisjuashde" className="h-20 w-20 object-contain" />
                         <h1 className="text-title text-2xl font-bold tracking-tight">Librería Lisjuashde</h1>
                     </div>
 

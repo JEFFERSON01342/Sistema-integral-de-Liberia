@@ -161,7 +161,7 @@ const SidebarContent = ({
     <div className="flex flex-col h-full">
         {/* Logo + empresa */}
         <div className="flex items-center gap-3 px-4 py-5 erp-sidebar-border border-b">
-            <img src="/logo-libreria.png" alt="Logo" className="h-10 w-10 object-contain shrink-0" />
+            <img src="/brand-mark.svg" alt="Logo Librería Lisjuashde" className="h-10 w-10 object-contain shrink-0" />
             <div className="flex flex-col leading-tight overflow-hidden">
                 <h3 className="erp-sidebar-text text-[0.95rem] font-bold" style={{ color: "var(--sidebar-text-active)" }}>
                     Librería Lisjuashde
