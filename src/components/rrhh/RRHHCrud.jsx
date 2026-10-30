@@ -127,6 +127,7 @@ export default function RRHHCrud({
         const puesto = puestos.find((item) => Number(item.id_puesto) === Number(empleado?.id_puesto))
           || puestos.find((item) => item.nombre.trim().toLowerCase() === empleado?.puesto?.trim().toLowerCase());
         siguiente.cargo = puesto ? String(puesto.id_puesto) : "";
+        siguiente.salario = empleado ? String(empleado.salario_mensual ?? "") : "";
       }
       return siguiente;
     });
@@ -331,13 +332,16 @@ export default function RRHHCrud({
                       ))}
                     </select>
                   ) : (
-                    <input
-                      type={c.type === "money" ? "number" : c.type}
-                      step={c.type === "money" || c.type === "number" ? "any" : undefined}
-                      value={form[c.name] ?? ""}
-                      onChange={(e) => cambiarCampo(c, e.target.value)}
-                      className="bg-input border border-secondary rounded-lg p-3 text-sm [&::-webkit-calendar-picker-indicator]:invert"
-                    />
+                    <>
+                      <input
+                        type={c.type === "money" ? "number" : c.type}
+                        step={c.type === "money" || c.type === "number" ? "any" : undefined}
+                        value={form[c.name] ?? ""}
+                        onChange={(e) => cambiarCampo(c, e.target.value)}
+                        className="bg-input border border-secondary rounded-lg p-3 text-sm [&::-webkit-calendar-picker-indicator]:invert"
+                      />
+                      {c.hint && <span className="text-xs text-subtitle">{c.hint}</span>}
+                    </>
                   )}
                 </div>
               ))}
