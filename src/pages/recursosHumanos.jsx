@@ -71,12 +71,17 @@ export default function RecursosHumanos() {
     const [tipoNomina, setTipoNomina] = useState("quincenal");
     const [deduccionesAdicionales, setDeduccionesAdicionales] = useState({});
     const [sucursalesNomina, setSucursalesNomina] = useState([]);
-    const [idSucursalNomina, setIdSucursalNomina] = useState("");
+    const [sucursalesVista, setSucursalesVista] = useState([]);
+    const [idSucursalVista, setIdSucursalVista] = useState("todas");
+    const [idSucursalNomina, setIdSucursalNomina] = useState(rol === "superadmin" ? "todas" : "");
     const [accionPeriodo, setAccionPeriodo] = useState(null);
 
     // Admin y gerente solo ven empleados de su sucursal asignada.
     const restringidoPorSucursal = rol === "admin" || rol === "gerente";
     const idSucursalFiltro = restringidoPorSucursal ? (perfil?.id_sucursal || null) : null;
+    const idSucursalFiltroVista = restringidoPorSucursal
+        ? idSucursalFiltro
+        : idSucursalVista === "todas" ? null : Number(idSucursalVista);
 
     const { empleados, isLoading, fetchEmpleados } = useEmpleados(idSucursalFiltro);
     const { empleados: todosLosEmpleados, fetchEmpleados: fetchTodos } = useEmpleados();
@@ -84,14 +89,16 @@ export default function RecursosHumanos() {
         departamentos: departamentosLaborales,
         puestos: puestosLaborales,
     } = useCatalogosLaborales({ incluirInactivos: true });
-    const puestosActivos = puestosLaborales.filter((puesto) => puesto.activo);
     const refrescarEmpleados = () => { fetchEmpleados(); fetchTodos(); };
+    const empleadosVisibles = useMemo(() => idSucursalFiltroVista
+        ? empleados.filter((empleado) => Number(empleado.id_sucursal) === Number(idSucursalFiltroVista))
+        : empleados, [empleados, idSucursalFiltroVista]);
 
     const { empleadosActivos, nominaMensual } = useMemo(() => {
-        const activos = empleados.filter((e) => e.estado === "Activo");
+        const activos = empleadosVisibles.filter((e) => e.estado === "Activo");
         const nomina = activos.reduce((sum, e) => sum + (Number(e.salario_mensual) || 0), 0);
         return { empleadosActivos: activos.length, nominaMensual: nomina };
-    }, [empleados]);
+    }, [empleadosVisibles]);
 
     // ---------- NÓMINA ----------
     const hoy = new Date();
@@ -113,9 +120,8 @@ export default function RecursosHumanos() {
         const cargarSucursales = async () => {
             let query = supabase
                 .from("sucursales")
-                .select("id_sucursal, nombre")
+                .select("id_sucursal, nombre, activa")
                 .eq("id_empresa", empresaId)
-                .eq("activa", true)
                 .order("nombre", { ascending: true });
             if (idSucursalFiltro) query = query.eq("id_sucursal", idSucursalFiltro);
             const { data, error } = await query;
@@ -123,19 +129,33 @@ export default function RecursosHumanos() {
                 toast.error(`No se pudieron cargar las sucursales para nómina: ${error.message}`);
                 return;
             }
-            const disponibles = data || [];
-            setSucursalesNomina(disponibles);
-            if (!idSucursalFiltro && disponibles.length === 1) {
-                setIdSucursalNomina(String(disponibles[0].id_sucursal));
+            const sucursales = data || [];
+            setSucursalesVista(sucursales);
+            setSucursalesNomina(sucursales.filter((sucursal) => sucursal.activa));
+            if (!idSucursalFiltro && sucursales.filter((sucursal) => sucursal.activa).length === 1) {
+                setIdSucursalNomina(String(sucursales.find((sucursal) => sucursal.activa).id_sucursal));
             }
         };
         cargarSucursales();
     }, [empresaId, idSucursalFiltro]);
 
+    useEffect(() => {
+        if (idSucursalFiltro) {
+            setIdSucursalNomina(String(idSucursalFiltro));
+        } else if (idSucursalVista === "todas") {
+            setIdSucursalNomina("todas");
+        } else if (idSucursalVista !== "todas") {
+            const sucursalActiva = sucursalesNomina.some(
+                (sucursal) => String(sucursal.id_sucursal) === idSucursalVista
+            );
+            setIdSucursalNomina(sucursalActiva ? idSucursalVista : "");
+        }
+    }, [idSucursalFiltro, idSucursalVista, sucursalesNomina]);
+
     const empleadosNomina = useMemo(() => empleados.filter((empleado) =>
         empleado.estado === "Activo"
-        && idSucursalNomina
-        && Number(empleado.id_sucursal) === Number(idSucursalNomina)
+        && (idSucursalNomina === "todas"
+            || (idSucursalNomina && Number(empleado.id_sucursal) === Number(idSucursalNomina)))
     ), [empleados, idSucursalNomina]);
 
     const detalleNomina = useMemo(() => empleadosNomina
@@ -174,7 +194,7 @@ export default function RecursosHumanos() {
     }, [detalleNomina]);
 
     const guardarNomina = async () => {
-        if (!idSucursalNomina) {
+        if (!idSucursalNomina || idSucursalNomina === "todas") {
             toast.error("Seleccione una sucursal para procesar la nómina.");
             return;
         }
@@ -286,7 +306,7 @@ export default function RecursosHumanos() {
             .select("*")
             .eq("id_empresa", empresaId)
             .order("created_at", { ascending: false });
-        if (idSucursalFiltro) query = query.eq("id_sucursal", idSucursalFiltro);
+        if (idSucursalFiltroVista) query = query.eq("id_sucursal", idSucursalFiltroVista);
         const { data, error } = await query;
         if (error) {
             toast.error(`No se pudo cargar el historial de nómina: ${error.message}`);
@@ -294,7 +314,7 @@ export default function RecursosHumanos() {
             setHistorial(data || []);
         }
         setLoadingHist(false);
-    }, [empresaId, idSucursalFiltro]);
+    }, [empresaId, idSucursalFiltroVista]);
 
     useEffect(() => {
         cargarHistorial();
@@ -321,11 +341,34 @@ export default function RecursosHumanos() {
 
     return (
         <div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+        {rol === "superadmin" && (
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+                <label htmlFor="rrhh-sucursal-vista" className="text-sm font-medium text-title">
+                    Ver información de:
+                </label>
+                <select
+                    id="rrhh-sucursal-vista"
+                    value={idSucursalVista}
+                    onChange={(event) => setIdSucursalVista(event.target.value)}
+                    className="min-w-56 rounded-lg border border-secondary bg-input p-2 text-sm text-title"
+                >
+                    <option value="todas">Toda la empresa</option>
+                    {sucursalesVista.map((sucursal) => (
+                        <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>
+                            {sucursal.nombre}{!sucursal.activa ? " · Inactiva" : ""}
+                        </option>
+                    ))}
+                </select>
+                <span className="text-xs text-subtitle">
+                    El filtro aplica a empleados, contratos, asistencias, permisos, prestaciones, liquidaciones, seguridad, cumplimiento e historial. Los puestos y departamentos son catálogos de toda la empresa.
+                </span>
+            </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                 <StatsCards title={"Empleados Activos"} icon={<Users className="text-title" />} value={empleadosActivos} />
                 <StatsCards title={"Nómina Bruta Mensual"} icon={<DollarSign className="text-title" />} value={fmtCordoba(nominaMensual)} />
-                <StatsCards title={"Costo Total Empresa"} icon={<Briefcase className="text-title" />} value={fmtCordoba(totales.costoEmpresa)} />
-                <StatsCards title={"Neto a Pagar"} icon={<TrendingUp className="text-green-400" />} value={fmtCordoba(totales.neto)} />
+                <StatsCards title={"Costo Empresa del período"} icon={<Briefcase className="text-title" />} value={fmtCordoba(totales.costoEmpresa)} />
+                <StatsCards title={"Neto estimado del período"} icon={<TrendingUp className="text-green-400" />} value={fmtCordoba(totales.neto)} />
             </div>
 
             <div className="mt-6">
@@ -352,11 +395,11 @@ export default function RecursosHumanos() {
 
                             {isLoading ? (
                                 <p className="p-4 text-center text-subtitle">Cargando empleados...</p>
-                            ) : empleados.length === 0 ? (
+                            ) : empleadosVisibles.length === 0 ? (
                                 <p className="text-center text-subtitle p-4">No hay empleados registrados</p>
                             ) : (
                                 <div className="mt-8 flex flex-col gap-4">
-                                    {empleados.map((empleado) => (
+                                    {empleadosVisibles.map((empleado) => (
                                         <EmpleadosCards
                                             key={empleado.id_empleado}
                                             {...empleado}
@@ -382,9 +425,9 @@ export default function RecursosHumanos() {
                         <RRHHCrud
                             {...CONTRATOS_CFG}
                             empresaId={empresaId}
-                            idSucursalFiltro={idSucursalFiltro}
-                            empleados={empleados}
-                            puestos={puestosActivos}
+                            idSucursalFiltro={idSucursalFiltroVista}
+                            empleados={empleadosVisibles}
+                            puestos={puestosLaborales}
                             departamentos={departamentosLaborales}
                             perfil={perfil}
                         />
@@ -392,31 +435,31 @@ export default function RecursosHumanos() {
 
                     {/* ------- TAB ASISTENCIA ------- */}
                     {activeTab === "asistencia" && (
-                        <RRHHCrud {...ASISTENCIAS_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                        <RRHHCrud {...ASISTENCIAS_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltroVista} empleados={empleadosVisibles} perfil={perfil} />
                     )}
 
                     {/* ------- TAB VACACIONES Y PERMISOS ------- */}
                     {activeTab === "vacaciones" && (
-                        <RRHHCrud {...VACACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                        <RRHHCrud {...VACACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltroVista} empleados={empleadosVisibles} perfil={perfil} />
                     )}
 
                     {/* ------- TAB PRESTACIONES ------- */}
                     {activeTab === "prestaciones" && (
-                        <RRHHCrud {...PRESTACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                        <RRHHCrud {...PRESTACIONES_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltroVista} empleados={empleadosVisibles} perfil={perfil} />
                     )}
 
                     {activeTab === "liquidaciones" && (
                         <LiquidacionesLaborales
                             empresaId={empresaId}
-                            idSucursalFiltro={idSucursalFiltro}
-                            empleados={empleados}
+                            idSucursalFiltro={idSucursalFiltroVista}
+                            empleados={empleadosVisibles}
                             rol={rol}
                         />
                     )}
 
                     {/* ------- TAB SEGURIDAD E HIGIENE ------- */}
                     {activeTab === "seguridad" && (
-                        <RRHHCrud {...SEGURIDAD_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                        <RRHHCrud {...SEGURIDAD_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltroVista} empleados={empleadosVisibles} perfil={perfil} />
                     )}
 
                     {/* ------- TAB MARCO LEGAL ------- */}
@@ -427,13 +470,13 @@ export default function RecursosHumanos() {
                                 <p className="text-subtitle text-s">Normativa laboral y fiscal aplicable en Nicaragua</p>
                             </div>
                             <MarcoLegalInfo />
-                            <RRHHCrud {...MARCO_LEGAL_CFG} empresaId={empresaId} empleados={empleados} perfil={perfil} />
+                            <RRHHCrud {...MARCO_LEGAL_CFG} empresaId={empresaId} empleados={empleadosVisibles} perfil={perfil} />
                         </>
                     )}
 
                     {/* ------- TAB CUMPLIMIENTO ------- */}
                     {activeTab === "cumplimiento" && (
-                        <RRHHCrud {...CUMPLIMIENTO_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltro} empleados={empleados} perfil={perfil} />
+                        <RRHHCrud {...CUMPLIMIENTO_CFG} empresaId={empresaId} idSucursalFiltro={idSucursalFiltroVista} empleados={empleadosVisibles} perfil={perfil} />
                     )}
 
                     {/* ------- TAB NÓMINA ------- */}
@@ -462,6 +505,9 @@ export default function RecursosHumanos() {
                                             className="bg-input border border-secondary rounded-lg p-2 text-sm"
                                         >
                                             <option value="">Seleccione sucursal...</option>
+                                            {rol === "superadmin" && (
+                                                <option value="todas">Todas las sucursales (vista consolidada)</option>
+                                            )}
                                             {sucursalesNomina.map((sucursal) => (
                                                 <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.nombre}</option>
                                             ))}
@@ -475,11 +521,16 @@ export default function RecursosHumanos() {
                                         <label className="text-xs text-subtitle">Fin período</label>
                                         <input type="date" value={periodoFin} onChange={(e) => setPeriodoFin(e.target.value)} className="bg-input border border-secondary rounded-lg p-2 text-sm [&::-webkit-calendar-picker-indicator]:invert" />
                                     </div>
-                                    <button onClick={guardarNomina} disabled={guardando || !periodoValido || !idSucursalNomina} className="bg-button text-button flex h-10 gap-2 px-4 rounded-xl items-center cursor-pointer hover:scale-105 transition disabled:opacity-60">
+                                    <button onClick={guardarNomina} disabled={guardando || !periodoValido || !idSucursalNomina || idSucursalNomina === "todas"} className="bg-button text-button flex h-10 gap-2 px-4 rounded-xl items-center cursor-pointer hover:scale-105 transition disabled:opacity-60">
                                         <Save size={18} /> {guardando ? "Procesando..." : "Procesar Nómina"}
                                     </button>
                                 </div>
                             </div>
+                            {rol === "superadmin" && idSucursalNomina === "todas" && (
+                                <p className="mt-3 text-sm text-subtitle">
+                                    La vista consolidada sirve para revisar los importes de todas las sucursales. Para procesar la nómina, seleccione una sucursal específica; cada período se registra por separado.
+                                </p>
+                            )}
                             <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
                                 Las tasas heredadas de INSS/INATEC y la estimación de IR aún no están verificadas contra instrumentos oficiales vigentes. Revise los importes antes de pagar o declarar; este cálculo no certifica cumplimiento.
                             </div>

@@ -119,6 +119,19 @@ export default function RRHHCrud({
     setModalOpen(true);
   };
 
+  const cambiarCampo = (campo, valor) => {
+    setForm((actual) => {
+      const siguiente = { ...actual, [campo.name]: valor };
+      if (tabla === "contratos" && campo.name === "id_empleado") {
+        const empleado = empleados.find((item) => String(item.id_empleado) === String(valor));
+        const puesto = puestos.find((item) => Number(item.id_puesto) === Number(empleado?.id_puesto))
+          || puestos.find((item) => item.nombre.trim().toLowerCase() === empleado?.puesto?.trim().toLowerCase());
+        siguiente.cargo = puesto ? String(puesto.id_puesto) : "";
+      }
+      return siguiente;
+    });
+  };
+
   const guardar = async (e) => {
     e.preventDefault();
     // Validaciones mínimas
@@ -290,26 +303,27 @@ export default function RRHHCrud({
                   {c.type === "textarea" ? (
                     <textarea value={form[c.name] ?? ""} onChange={(e) => setForm({ ...form, [c.name]: e.target.value })} rows={2} className="bg-input border border-secondary rounded-lg p-3 text-sm" />
                   ) : c.type === "select" ? (
-                    <select value={form[c.name] ?? ""} onChange={(e) => setForm({ ...form, [c.name]: e.target.value })} className="bg-input border border-secondary rounded-lg p-3 text-sm">
+                    <select value={form[c.name] ?? ""} onChange={(e) => cambiarCampo(c, e.target.value)} className="bg-input border border-secondary rounded-lg p-3 text-sm">
                       <option value="">Seleccione…</option>
                       {c.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   ) : c.type === "empleado" ? (
-                    <select value={form[c.name] ?? ""} onChange={(e) => setForm({ ...form, [c.name]: e.target.value })} className="bg-input border border-secondary rounded-lg p-3 text-sm">
+                    <select value={form[c.name] ?? ""} onChange={(e) => cambiarCampo(c, e.target.value)} className="bg-input border border-secondary rounded-lg p-3 text-sm">
                       <option value="">{c.required ? "Seleccione empleado…" : "— (ninguno) —"}</option>
                       {empleados.map((e) => <option key={e.id_empleado} value={e.id_empleado}>{e.nombre_completo}</option>)}
                     </select>
                   ) : c.type === "puesto" ? (
-                    <select value={form[c.name] ?? ""} onChange={(e) => setForm({ ...form, [c.name]: e.target.value })} className="bg-input border border-secondary rounded-lg p-3 text-sm">
+                    <select value={form[c.name] ?? ""} onChange={(e) => cambiarCampo(c, e.target.value)} className="bg-input border border-secondary rounded-lg p-3 text-sm">
                       <option value="">Seleccione un puesto…</option>
                       {String(form[c.name] || "").startsWith("__historico__") && (
                         <option value={form[c.name]}>
                           {`Cargo guardado: ${String(form[c.name]).slice("__historico__".length)} (sin puesto activo en el catálogo)`}
                         </option>
                       )}
-                      {puestos.map((puesto) => (
+                      {puestos.filter((puesto) => puesto.activo || String(puesto.id_puesto) === String(form[c.name])).map((puesto) => (
                         <option key={puesto.id_puesto} value={puesto.id_puesto}>
                           {puesto.nombre}
+                          {!puesto.activo ? " · Inactivo" : ""}
                           {departamentos.find((departamento) => Number(departamento.id_departamento) === Number(puesto.id_departamento))
                             ? ` — ${departamentos.find((departamento) => Number(departamento.id_departamento) === Number(puesto.id_departamento)).nombre}`
                             : ""}
@@ -321,7 +335,7 @@ export default function RRHHCrud({
                       type={c.type === "money" ? "number" : c.type}
                       step={c.type === "money" || c.type === "number" ? "any" : undefined}
                       value={form[c.name] ?? ""}
-                      onChange={(e) => setForm({ ...form, [c.name]: e.target.value })}
+                      onChange={(e) => cambiarCampo(c, e.target.value)}
                       className="bg-input border border-secondary rounded-lg p-3 text-sm [&::-webkit-calendar-picker-indicator]:invert"
                     />
                   )}
