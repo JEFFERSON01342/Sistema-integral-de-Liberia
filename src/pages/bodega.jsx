@@ -316,11 +316,9 @@ export default function Bodega() {
           <p className="text-subtitle">Existencias por ubicación, recepciones y movimientos trazables.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {rol !== "bodega" && (
-            <Link to="/dashboard/transferencias" className="btn-secondary inline-flex items-center gap-2">
-              <ArrowLeftRight size={18} /> Transferencias
-            </Link>
-          )}
+          <Link to="/dashboard/transferencias" className="btn-secondary inline-flex items-center gap-2">
+            <ArrowLeftRight size={18} /> Transferencias
+          </Link>
           <button type="button" onClick={() => { cargarBodega(); fetchCompras(); }} disabled={cargando}
             className="btn-secondary inline-flex items-center gap-2">
             <RefreshCw size={17} className={cargando ? "animate-spin" : ""} /> Actualizar

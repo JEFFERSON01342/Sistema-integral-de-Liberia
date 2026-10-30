@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { ArrowLeftRight, Plus, X, Trash2, PackageSearch } from "lucide-react";
+import { ArrowLeftRight, Barcode, Plus, X, Trash2, PackageSearch } from "lucide-react";
 import { supabase } from "../supabase/supabaseclient";
 import { useAuth } from "../contexts/authcontext";
 import { useEmpresa } from "../contexts/empresacontext";
@@ -21,7 +21,8 @@ export default function Transferencias() {
   const [transferencias, setTransferencias] = useState([]);
   const [detalles, setDetalles] = useState([]);
   const [sucursales, setSucursales] = useState([]);
-  const [productos, setProductos] = useState([]);
+  const [lotesOrigen, setLotesOrigen] = useState([]);
+  const [cargandoLotes, setCargandoLotes] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,7 +37,8 @@ export default function Transferencias() {
     motivo: "",
   });
   const [lineas, setLineas] = useState([]);
-  const [prodSel, setProdSel] = useState("");
+  const [idLoteSel, setIdLoteSel] = useState("");
+  const [codigoLoteSel, setCodigoLoteSel] = useState("");
   const [cantSel, setCantSel] = useState("1");
 
   const esSuperadmin = rol === "superadmin";
@@ -51,41 +53,45 @@ export default function Transferencias() {
     ),
     [ubicaciones, ubicacionesOrigen, ubicacionesDestino]
   );
+  const lotesDisponibles = useMemo(() => lotesOrigen.flatMap((lote) => {
+    const ubicacion = (lote.ubicaciones_actuales || []).find(
+      (item) => Number(item.id_ubicacion) === Number(form.origenUbicacion)
+    );
+    const cantidadDisponible = Number(ubicacion?.cantidad || 0);
+    return cantidadDisponible > 0 ? [{ ...lote, cantidad_disponible: cantidadDisponible }] : [];
+  }), [form.origenUbicacion, lotesOrigen]);
 
   const cargar = useCallback(async () => {
     if (!empresaId) {
       setTransferencias([]);
       setDetalles([]);
       setSucursales([]);
-      setProductos([]);
       return;
     }
 
     setIsLoading(true);
     try {
-      const [transferenciasResult, sucursalesResult, productosResult] = await Promise.all([
+      const sucursalesQuery = supabase
+        .from("sucursales")
+        .select("id_sucursal, nombre, activa")
+        .eq("id_empresa", empresaId)
+        .eq("activa", true)
+        .order("nombre");
+      if (!esSuperadmin && perfil?.id_sucursal) {
+        sucursalesQuery.eq("id_sucursal", perfil.id_sucursal);
+      }
+
+      const [transferenciasResult, sucursalesResult] = await Promise.all([
         supabase
           .from("transferencias_inventario")
           .select("*")
           .eq("id_empresa", empresaId)
           .order("transferida_en", { ascending: false })
           .limit(100),
-        supabase
-          .from("sucursales")
-          .select("id_sucursal, nombre, activa")
-          .eq("id_empresa", empresaId)
-          .eq("activa", true)
-          .order("nombre"),
-        supabase
-          .from("productos")
-          .select("id_producto, sku, nombre")
-          .eq("id_empresa", empresaId)
-          .eq("activo", true)
-          .order("nombre"),
+        sucursalesQuery,
       ]);
       if (transferenciasResult.error) throw transferenciasResult.error;
       if (sucursalesResult.error) throw sucursalesResult.error;
-      if (productosResult.error) throw productosResult.error;
 
       const rows = transferenciasResult.data || [];
       const ids = rows.map((transferencia) => transferencia.id_transferencia);
@@ -98,7 +104,7 @@ export default function Transferencias() {
         ids.length
           ? supabase
             .from("detalles_transferencia_inventario")
-            .select("id_transferencia, id_producto, cantidad, costo_total")
+            .select("id_transferencia, id_producto, id_lote, cantidad, costo_total")
             .in("id_transferencia", ids)
           : Promise.resolve({ data: [], error: null }),
         ubicacionIds.length
@@ -115,7 +121,6 @@ export default function Transferencias() {
       setTransferencias(rows);
       setDetalles(detallesResult.data || []);
       setSucursales(sucursalesResult.data || []);
-      setProductos(productosResult.data || []);
       setUbicaciones(ubicacionesResult.data || []);
     } catch (error) {
       console.error("Error cargando transferencias:", error);
@@ -123,7 +128,7 @@ export default function Transferencias() {
     } finally {
       setIsLoading(false);
     }
-  }, [empresaId]);
+  }, [empresaId, esSuperadmin, perfil?.id_sucursal]);
 
   useEffect(() => {
     cargar();
@@ -159,6 +164,36 @@ export default function Transferencias() {
     setForm((prev) => ({ ...prev, destinoUbicacion: "" }));
   }, [form.destinoSucursal, cargarUbicaciones]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const cargarLotesOrigen = async () => {
+      setLotesOrigen([]);
+      setIdLoteSel("");
+      setCodigoLoteSel("");
+      if (!isModalOpen || !empresaId || !form.origenSucursal || !form.origenUbicacion) {
+        setCargandoLotes(false);
+        return;
+      }
+
+      setCargandoLotes(true);
+      const { data, error } = await supabase
+        .from("lotes_trazabilidad_bodega")
+        .select("id_lote,codigo_lote,id_sucursal,id_producto,producto,sku,lote_proveedor,fecha_vencimiento,estado_revision,ubicaciones_actuales")
+        .eq("id_empresa", empresaId)
+        .eq("id_sucursal", Number(form.origenSucursal))
+        .order("recibida_en", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        toast.error(`No se pudieron cargar los lotes de origen: ${error.message}`);
+      } else {
+        setLotesOrigen(data || []);
+      }
+      setCargandoLotes(false);
+    };
+    cargarLotesOrigen();
+    return () => { cancelled = true; };
+  }, [empresaId, form.origenSucursal, form.origenUbicacion, isModalOpen]);
+
   const abrirModal = () => {
     const sucursalInicial = perfil?.id_sucursal
       ? String(perfil.id_sucursal)
@@ -171,29 +206,51 @@ export default function Transferencias() {
       motivo: "",
     });
     setLineas([]);
-    setProdSel("");
+    setLotesOrigen([]);
+    setIdLoteSel("");
+    setCodigoLoteSel("");
     setCantSel("1");
     setIsModalOpen(true);
   };
 
+  const seleccionarLotePorCodigo = () => {
+    const codigo = codigoLoteSel.trim().toUpperCase();
+    if (!codigo) return;
+    const lote = lotesDisponibles.find((item) => item.codigo_lote.toUpperCase() === codigo);
+    if (!lote) {
+      toast.error(`No hay existencias del lote ${codigo} en la ubicación de origen.`);
+      return;
+    }
+    setIdLoteSel(String(lote.id_lote));
+  };
+
   const agregarLinea = () => {
     const cantidad = Number(cantSel);
-    if (!prodSel) return toast.error("Seleccione un producto.");
+    if (!idLoteSel) return toast.error("Escanee o seleccione un lote.");
     if (!Number.isFinite(cantidad) || cantidad <= 0 || cantidad !== Number(cantidad.toFixed(3))) {
       return toast.error("La cantidad debe ser positiva y tener como máximo tres decimales.");
     }
-    const producto = productos.find((item) => item.id_producto === Number(prodSel));
-    if (!producto) return toast.error("El producto seleccionado ya no está disponible.");
-    if (lineas.some((linea) => linea.id_producto === producto.id_producto)) {
-      return toast.error("El producto ya está en la lista.");
+    const lote = lotesDisponibles.find((item) => String(item.id_lote) === idLoteSel);
+    if (!lote) return toast.error("El lote ya no está disponible en la ubicación de origen.");
+    if (cantidad > lote.cantidad_disponible) {
+      return toast.error(`La cantidad supera las existencias del lote (${lote.cantidad_disponible.toFixed(3)}).`);
+    }
+    if (lineas.some((linea) => linea.id_lote === lote.id_lote)) {
+      return toast.error("El lote ya está en la lista.");
     }
     setLineas((prev) => [...prev, {
-      id_producto: producto.id_producto,
-      sku: producto.sku,
-      nombre: producto.nombre,
+      id_producto: lote.id_producto,
+      id_lote: lote.id_lote,
+      codigo_lote: lote.codigo_lote,
+      lote_proveedor: lote.lote_proveedor,
+      fecha_vencimiento: lote.fecha_vencimiento,
+      cantidad_disponible: lote.cantidad_disponible,
+      sku: lote.sku,
+      nombre: lote.producto,
       cantidad,
     }]);
-    setProdSel("");
+    setIdLoteSel("");
+    setCodigoLoteSel("");
     setCantSel("1");
   };
 
@@ -217,7 +274,7 @@ export default function Transferencias() {
       const { data: idTransferencia, error } = await supabase.rpc("transferir_inventario", {
         p_id_ubicacion_origen: Number(form.origenUbicacion),
         p_id_ubicacion_destino: Number(form.destinoUbicacion),
-        p_lineas: lineas.map(({ id_producto, cantidad }) => ({ id_producto, cantidad })),
+        p_lineas: lineas.map(({ id_producto, id_lote, cantidad }) => ({ id_producto, id_lote, cantidad })),
         p_motivo: form.motivo.trim(),
         p_clave_idempotencia: globalThis.crypto.randomUUID(),
       });
@@ -325,6 +382,13 @@ export default function Transferencias() {
                       </td>
                       <td className="py-3 px-2 text-center">
                         {lineasTransferidas.reduce((total, linea) => total + Number(linea.cantidad), 0).toFixed(3)}
+                        {lineasTransferidas.length > 0 && (
+                          <span className="block text-xs text-subtitle">
+                            {lineasTransferidas
+                              .map((linea) => linea.id_lote ? `LT-${linea.id_lote}` : "Sin lote")
+                              .join(", ")}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-2 text-subtitle max-w-xs truncate">{transferencia.motivo}</td>
                       <td className="py-3 px-2 text-center">
@@ -364,8 +428,14 @@ export default function Transferencias() {
                 ubicaciones={ubicacionesOrigen}
                 sucursal={form.origenSucursal}
                 ubicacion={form.origenUbicacion}
-                onSucursalChange={(value) => setForm((prev) => ({ ...prev, origenSucursal: value }))}
-                onUbicacionChange={(value) => setForm((prev) => ({ ...prev, origenUbicacion: value }))}
+                onSucursalChange={(value) => {
+                  setForm((prev) => ({ ...prev, origenSucursal: value, origenUbicacion: "" }));
+                  setLineas([]);
+                }}
+                onUbicacionChange={(value) => {
+                  setForm((prev) => ({ ...prev, origenUbicacion: value }));
+                  setLineas([]);
+                }}
                 disabled={!esSuperadmin && Boolean(perfil?.id_sucursal)}
               />
               <SelectorUbicacion
@@ -374,8 +444,9 @@ export default function Transferencias() {
                 ubicaciones={ubicacionesDestino}
                 sucursal={form.destinoSucursal}
                 ubicacion={form.destinoUbicacion}
-                onSucursalChange={(value) => setForm((prev) => ({ ...prev, destinoSucursal: value }))}
+                onSucursalChange={(value) => setForm((prev) => ({ ...prev, destinoSucursal: value, destinoUbicacion: "" }))}
                 onUbicacionChange={(value) => setForm((prev) => ({ ...prev, destinoUbicacion: value }))}
+                disabled={!esSuperadmin && Boolean(perfil?.id_sucursal)}
               />
             </div>
 
@@ -398,44 +469,83 @@ export default function Transferencias() {
               />
             </div>
 
-            <div className="flex flex-col md:flex-row gap-2 items-end mb-4 bg-secondary/30 p-4 rounded-xl border border-secondary">
-              <div className="flex flex-col gap-2 flex-1 w-full">
-                <label className="text-sm font-medium flex items-center gap-1" htmlFor="producto-transferencia">
-                  <PackageSearch size={16} /> Producto
+            <div className="flex flex-col gap-3 mb-4 bg-secondary/30 p-4 rounded-xl border border-secondary">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium" htmlFor="codigo-lote-transferencia">
+                  <Barcode size={16} className="inline mr-1" /> Escanear código de lote
                 </label>
-                <select
-                  id="producto-transferencia"
-                  value={prodSel}
-                  onChange={(event) => setProdSel(event.target.value)}
-                  className="bg-input border border-secondary rounded-lg p-2"
-                >
-                  <option value="">Seleccione producto</option>
-                  {productos.map((producto) => (
-                    <option key={producto.id_producto} value={producto.id_producto}>
-                      {producto.sku} — {producto.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-2 w-full md:w-32">
-                <label className="text-sm font-medium" htmlFor="cantidad-transferencia">Cantidad</label>
                 <input
-                  id="cantidad-transferencia"
-                  type="number"
-                  min="0.001"
-                  step="0.001"
-                  value={cantSel}
-                  onChange={(event) => setCantSel(event.target.value)}
+                  id="codigo-lote-transferencia"
+                  type="text"
+                  value={codigoLoteSel}
+                  onChange={(event) => {
+                    setCodigoLoteSel(event.target.value);
+                    setIdLoteSel("");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      seleccionarLotePorCodigo();
+                    }
+                  }}
+                  placeholder="Ej.: LT-123"
+                  disabled={!form.origenUbicacion || cargandoLotes}
                   className="bg-input border border-secondary rounded-lg p-2"
                 />
               </div>
-              <button
-                type="button"
-                onClick={agregarLinea}
-                className="bg-button text-button p-2 rounded-lg flex items-center gap-1 hover:opacity-90 transition h-10"
-              >
-                <Plus size={18} /> Agregar
-              </button>
+              <div className="flex flex-col md:flex-row gap-2 items-end">
+                <div className="flex flex-col gap-2 flex-1 w-full">
+                  <label className="text-sm font-medium flex items-center gap-1" htmlFor="lote-transferencia">
+                    <PackageSearch size={16} /> Lote disponible
+                  </label>
+                  <select
+                    id="lote-transferencia"
+                    value={idLoteSel}
+                    onChange={(event) => {
+                      const lote = lotesDisponibles.find((item) => String(item.id_lote) === event.target.value);
+                      setIdLoteSel(event.target.value);
+                      setCodigoLoteSel(lote?.codigo_lote || "");
+                    }}
+                    disabled={!form.origenUbicacion || cargandoLotes}
+                    className="bg-input border border-secondary rounded-lg p-2"
+                  >
+                    <option value="">
+                      {!form.origenUbicacion
+                        ? "Seleccione primero la ubicación de origen"
+                        : cargandoLotes
+                          ? "Cargando lotes..."
+                          : lotesDisponibles.length
+                            ? "Seleccione un lote"
+                            : "No hay lotes con existencias en esta ubicación"}
+                    </option>
+                    {lotesDisponibles.map((lote) => (
+                      <option key={lote.id_lote} value={lote.id_lote}>
+                        {lote.codigo_lote} — {lote.sku} {lote.producto} ({lote.cantidad_disponible.toFixed(3)} disp.)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-2 w-full md:w-32">
+                  <label className="text-sm font-medium" htmlFor="cantidad-transferencia">Cantidad</label>
+                  <input
+                    id="cantidad-transferencia"
+                    type="number"
+                    min="0.001"
+                    step="0.001"
+                    value={cantSel}
+                    onChange={(event) => setCantSel(event.target.value)}
+                    className="bg-input border border-secondary rounded-lg p-2"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={agregarLinea}
+                  disabled={cargandoLotes || !idLoteSel}
+                  className="bg-button text-button p-2 rounded-lg flex items-center gap-1 hover:opacity-90 transition h-10 disabled:opacity-50"
+                >
+                  <Plus size={18} /> Agregar
+                </button>
+              </div>
             </div>
 
             {lineas.length > 0 && (
@@ -444,21 +554,29 @@ export default function Transferencias() {
                   <thead>
                     <tr className="border-b border-secondary/50 text-subtitle">
                       <th className="py-2 px-2 text-left">Producto</th>
+                      <th className="py-2 px-2 text-left">Lote</th>
+                      <th className="py-2 px-2 text-center">Disponible</th>
                       <th className="py-2 px-2 text-center">Cantidad</th>
                       <th className="py-2 px-2 text-center">Quitar</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lineas.map((linea) => (
-                      <tr key={linea.id_producto} className="border-t border-secondary">
+                      <tr key={linea.id_lote} className="border-t border-secondary">
                         <td className="py-2 px-2">{linea.sku} — {linea.nombre}</td>
+                        <td className="py-2 px-2">
+                          {linea.codigo_lote}
+                          {linea.lote_proveedor ? <span className="block text-xs text-subtitle">Proveedor: {linea.lote_proveedor}</span> : null}
+                          {linea.fecha_vencimiento ? <span className="block text-xs text-subtitle">Vence: {linea.fecha_vencimiento}</span> : null}
+                        </td>
+                        <td className="py-2 px-2 text-center">{linea.cantidad_disponible.toFixed(3)}</td>
                         <td className="py-2 px-2 text-center">{linea.cantidad.toFixed(3)}</td>
                         <td className="py-2 px-2 text-center">
                           <button
                             type="button"
-                            onClick={() => setLineas((prev) => prev.filter((item) => item.id_producto !== linea.id_producto))}
+                            onClick={() => setLineas((prev) => prev.filter((item) => item.id_lote !== linea.id_lote))}
                             className="text-red-400 hover:text-red-300"
-                            aria-label={`Quitar ${linea.nombre}`}
+                            aria-label={`Quitar lote ${linea.codigo_lote}`}
                           >
                             <Trash2 size={16} />
                           </button>

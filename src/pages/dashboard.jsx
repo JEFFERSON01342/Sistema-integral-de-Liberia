@@ -36,7 +36,7 @@ const navGroups = [
             { to: "inventario",     label: 'Inventario',     icon: Package,        roles: ["admin", "gerente"] },
             { to: "bodega",         label: 'Bodega',          icon: Warehouse,      roles: ["admin", "gerente", "bodega"] },
             { to: "proveedores",    label: 'Proveedores',    icon: Users,          roles: ["admin", "gerente"] },
-            { to: "transferencias", label: 'Transferencias', icon: ArrowLeftRight, roles: ["admin", "gerente"] },
+            { to: "transferencias", label: 'Transferencias', icon: ArrowLeftRight, roles: ["admin", "gerente", "bodega"] },
             { to: "sucursales",     label: 'Sucursales',     icon: Building2,      roles: [] }, // solo superadmin (no se crean sucursales desde admin)
         ],
     },
