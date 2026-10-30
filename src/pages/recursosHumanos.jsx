@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import {
     Users, DollarSign, CircleDollarSign, Calendar, Building2, Plus, Calculator, Save,
-    Briefcase, TrendingUp, History, FileText, Plane, HardHat, Scale, ClipboardCheck, Clock, Gift
+    Briefcase, TrendingUp, History, FileText, Plane, HardHat, Scale, ClipboardCheck, Clock, Gift, Trash2
 } from "lucide-react";
 import StatsCards from "../components/statscards";
 import Tabs from "../components/tabs";
@@ -69,7 +69,7 @@ export default function RecursosHumanos() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [configuracionContableAbierta, setConfiguracionContableAbierta] = useState(false);
     const [tipoNomina, setTipoNomina] = useState("quincenal");
-    const [descuentosAdicionales, setDescuentosAdicionales] = useState({});
+    const [deduccionesAdicionales, setDeduccionesAdicionales] = useState({});
     const [sucursalesNomina, setSucursalesNomina] = useState([]);
     const [idSucursalNomina, setIdSucursalNomina] = useState("");
     const [accionPeriodo, setAccionPeriodo] = useState(null);
@@ -98,7 +98,7 @@ export default function RecursosHumanos() {
     const [periodoFin, setPeriodoFin] = useState(fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 15)));
     const [guardando, setGuardando] = useState(false);
     useEffect(() => {
-        setDescuentosAdicionales({});
+        setDeduccionesAdicionales({});
     }, [tipoNomina, idSucursalNomina, periodoInicio, periodoFin]);
     const diasPeriodo = diasInclusivos(periodoInicio, periodoFin);
     const periodoValido = tipoNomina === "semanal"
@@ -140,16 +140,24 @@ export default function RecursosHumanos() {
     const detalleNomina = useMemo(() => empleadosNomina
         .filter((empleado) => empleado.frecuencia_pago === tipoNomina)
         .filter(() => periodoValido)
-        .map((empleado) => ({
-            empleado,
-            calc: calcularNominaPorPeriodo(
-                Number(empleado.salario_mensual) || 0,
-                tipoNomina,
-                periodoInicio,
-                periodoFin,
-                Number(descuentosAdicionales[empleado.id_empleado]) || 0
-            ),
-        })), [empleadosNomina, tipoNomina, periodoInicio, periodoFin, periodoValido, descuentosAdicionales]);
+        .map((empleado) => {
+            const lineasDeducciones = deduccionesAdicionales[empleado.id_empleado] || [];
+            const otrosDescuentos = Math.round(lineasDeducciones.reduce(
+                (total, linea) => total + (Number(linea.monto) || 0),
+                0
+            ) * 100) / 100;
+            return {
+                empleado,
+                lineasDeducciones,
+                calc: calcularNominaPorPeriodo(
+                    Number(empleado.salario_mensual) || 0,
+                    tipoNomina,
+                    periodoInicio,
+                    periodoFin,
+                    otrosDescuentos
+                ),
+            };
+        }), [empleadosNomina, tipoNomina, periodoInicio, periodoFin, periodoValido, deduccionesAdicionales]);
 
     const totales = useMemo(() => {
         return detalleNomina.reduce(
@@ -179,16 +187,24 @@ export default function RecursosHumanos() {
             toast.error(`No hay empleados activos con frecuencia ${tipoNomina} en esta sucursal.`);
             return;
         }
-        const descuentoInvalido = detalleNomina.find(({ empleado, calc }) => {
-            const valor = descuentosAdicionales[empleado.id_empleado] ?? "";
-            const descuento = valor === "" ? 0 : Number(valor);
-            return !Number.isFinite(descuento)
-                || descuento < 0
-                || descuento > calc.bruto - calc.inssLaboral - calc.irMensual
+        const descuentoInvalido = detalleNomina.find(({ calc, lineasDeducciones }) => {
+            const lineasConDatos = lineasDeducciones.filter((linea) => (
+                linea.concepto.trim() !== "" || linea.monto.trim() !== ""
+            ));
+            const lineasInvalidas = lineasConDatos.some((linea) => {
+                const monto = Number(linea.monto);
+                return !linea.concepto.trim()
+                    || linea.concepto.trim().length > 120
+                    || !Number.isFinite(monto)
+                    || monto <= 0
+                    || Math.round(monto * 100) / 100 !== monto;
+            });
+            return lineasInvalidas
+                || calc.otrosDescuentos > calc.bruto - calc.inssLaboral - calc.irMensual
                 || calc.salarioNeto < 0;
         });
         if (descuentoInvalido) {
-            toast.error(`Revise el descuento adicional de ${descuentoInvalido.empleado.nombre_completo}: debe ser válido y no puede dejar el neto por debajo de C$0.00.`);
+            toast.error(`Revise las deducciones de ${descuentoInvalido.empleado.nombre_completo}: cada concepto debe tener título y monto válido, y el neto no puede quedar por debajo de C$0.00.`);
             return;
         }
         const confirm = await Swal.fire({
@@ -213,6 +229,12 @@ export default function RecursosHumanos() {
                 inss_laboral: d.calc.inssLaboral,
                 ir_mensual: d.calc.irMensual,
                 otros_descuentos: d.calc.otrosDescuentos,
+                deducciones_adicionales: d.lineasDeducciones
+                    .filter((linea) => linea.concepto.trim() && linea.monto.trim())
+                    .map((linea) => ({
+                        concepto: linea.concepto.trim(),
+                        monto: Math.round(Number(linea.monto) * 100) / 100,
+                    })),
                 salario_neto: d.calc.salarioNeto,
                 inss_patronal: d.calc.inssPatronal,
                 inatec: d.calc.inatec,
@@ -220,7 +242,7 @@ export default function RecursosHumanos() {
                 vacaciones_provisionadas: d.calc.vacaciones,
                 costo_total_empresa: d.calc.costoTotalEmpresa,
             }));
-            const { data: idPeriodo, error } = await supabase.rpc("procesar_nomina", {
+            const { data: idPeriodo, error } = await supabase.rpc("procesar_nomina_con_deducciones", {
                 p_datos: {
                     id_empresa: empresaId,
                     id_sucursal: Number(idSucursalNomina),
@@ -453,7 +475,7 @@ export default function RecursosHumanos() {
                                 Las tasas heredadas de INSS/INATEC y la estimación de IR aún no están verificadas contra instrumentos oficiales vigentes. Revise los importes antes de pagar o declarar; este cálculo no certifica cumplimiento.
                             </div>
                             <p className="mt-3 text-sm text-subtitle">
-                                El descuento adicional es opcional, se captura por empleado y período y empieza en C$0.00. Se suma a las deducciones y reduce el neto; no cambia el salario del empleado ni nóminas anteriores.
+                                Agregue uno o varios descuentos por empleado, cada uno con concepto y monto. Solo se guardan al procesar esta nómina; no cambian el salario del empleado ni nóminas anteriores.
                             </p>
                             {!periodoValido && (
                                 <p className="mt-3 text-sm text-red-400">
@@ -470,14 +492,14 @@ export default function RecursosHumanos() {
                                 {detalleNomina.length === 0 ? (
                                     <p className="p-4 text-center text-subtitle">No hay empleados activos para procesar.</p>
                                 ) : (
-                                    <table className="min-w-[1120px] w-full text-title text-sm">
+                                    <table className="min-w-[1200px] w-full text-title text-sm">
                                         <thead className="bg-secondary/10">
                                             <tr className="border-b border-secondary/50 text-xs font-semibold text-subtitle">
                                                 <th className="py-3 px-3 text-left">Empleado</th>
                                                 <th className="py-3 px-3 text-right">Bruto</th>
                                                 <th className="py-3 px-3 text-right">INSS laboral*</th>
                                                 <th className="py-3 px-3 text-right">IR estimado*</th>
-                                                <th className="py-3 px-3 text-right">Descuento adicional</th>
+                                                <th className="py-3 px-3 text-left">Deducciones adicionales</th>
                                                 <th className="py-3 px-3 text-right">Neto</th>
                                                 <th className="py-3 px-3 text-right">INSS patronal*</th>
                                                 <th className="py-3 px-3 text-right">INATEC*</th>
@@ -500,21 +522,67 @@ export default function RecursosHumanos() {
                                                     <td className="py-3 px-3 text-right">{fmtCordoba(d.calc.bruto)}</td>
                                                     <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.inssLaboral)}</td>
                                                     <td className="py-3 px-3 text-right text-red-400">-{fmtCordoba(d.calc.irMensual)}</td>
-                                                    <td className="py-3 px-3 text-right">
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            max={Math.max(0, d.calc.bruto - d.calc.inssLaboral - d.calc.irMensual)}
-                                                            step="0.01"
-                                                            value={descuentosAdicionales[d.empleado.id_empleado] ?? ""}
-                                                            onChange={(event) => setDescuentosAdicionales((actuales) => ({
-                                                                ...actuales,
-                                                                [d.empleado.id_empleado]: event.target.value,
-                                                            }))}
-                                                            aria-label={`Descuento adicional para ${d.empleado.nombre_completo}`}
-                                                            placeholder="0.00"
-                                                            className="w-32 rounded border border-secondary bg-input px-2 py-1 text-right text-title"
-                                                        />
+                                                    <td className="min-w-72 px-3 py-2">
+                                                        <div className="flex flex-col gap-2">
+                                                            {d.lineasDeducciones.map((linea, index) => (
+                                                                <div key={`${d.empleado.id_empleado}-${index}`} className="flex items-center gap-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        maxLength={120}
+                                                                        value={linea.concepto}
+                                                                        onChange={(event) => setDeduccionesAdicionales((actuales) => ({
+                                                                            ...actuales,
+                                                                            [d.empleado.id_empleado]: actuales[d.empleado.id_empleado].map((actual, i) => (
+                                                                                i === index ? { ...actual, concepto: event.target.value } : actual
+                                                                            )),
+                                                                        }))}
+                                                                        aria-label={`Concepto de deducción ${index + 1} para ${d.empleado.nombre_completo}`}
+                                                                        placeholder="Concepto"
+                                                                        className="min-w-0 flex-1 rounded border border-secondary bg-input px-2 py-1 text-sm text-title"
+                                                                    />
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max={Math.max(0, d.calc.bruto - d.calc.inssLaboral - d.calc.irMensual)}
+                                                                        step="0.01"
+                                                                        value={linea.monto}
+                                                                        onChange={(event) => setDeduccionesAdicionales((actuales) => ({
+                                                                            ...actuales,
+                                                                            [d.empleado.id_empleado]: actuales[d.empleado.id_empleado].map((actual, i) => (
+                                                                                i === index ? { ...actual, monto: event.target.value } : actual
+                                                                            )),
+                                                                        }))}
+                                                                        aria-label={`Monto de deducción ${index + 1} para ${d.empleado.nombre_completo}`}
+                                                                        placeholder="C$"
+                                                                        className="w-24 rounded border border-secondary bg-input px-2 py-1 text-right text-sm text-title"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setDeduccionesAdicionales((actuales) => ({
+                                                                            ...actuales,
+                                                                            [d.empleado.id_empleado]: actuales[d.empleado.id_empleado].filter((_, i) => i !== index),
+                                                                        }))}
+                                                                        aria-label={`Eliminar deducción ${index + 1} de ${d.empleado.nombre_completo}`}
+                                                                        className="rounded p-1 text-red-400 hover:bg-red-500/10"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setDeduccionesAdicionales((actuales) => ({
+                                                                    ...actuales,
+                                                                    [d.empleado.id_empleado]: [
+                                                                        ...(actuales[d.empleado.id_empleado] || []),
+                                                                        { concepto: "", monto: "" },
+                                                                    ],
+                                                                }))}
+                                                                className="flex w-fit items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                                                            >
+                                                                <Plus size={14} /> Agregar deducción
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                     <td className="py-3 px-3 text-right text-green-400 font-semibold">{fmtCordoba(d.calc.salarioNeto)}</td>
                                                     <td className="py-3 px-3 text-right text-subtitle">{fmtCordoba(d.calc.inssPatronal)}</td>
