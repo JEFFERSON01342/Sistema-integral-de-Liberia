@@ -32,7 +32,7 @@ El menú y las rutas se filtran por rol en React. Supabase también aplica contr
 
 Se inició el selector de alcance de sesión para el superadministrador desde **Vista de sucursales**: permite elegir una sucursal o toda la empresa y conserva la selección al navegar por el Admin. Los demás roles mantienen el alcance de su sucursal asignada. Estados Financieros y Proyecciones ya envían el alcance a RPC con filtro por sucursal; nómina y los demás módulos aún deben conectarse por etapas, ajustando también las RPC y validaciones del servidor cuando corresponda. No interpretar la etiqueta global del encabezado como evidencia de que todos los módulos ya están filtrados.
 
-La fase financiera añade filtros de sucursal en **Estados Financieros** y **Proyecciones**. Las RPC con firma de filtro conservan las funciones antiguas para compatibilidad con los demás módulos. La migración `20261029235000_reportes_financieros_por_sucursal.sql` debe aplicarse y probarse en Supabase antes de publicar esta versión; los otros módulos todavía no heredan automáticamente el filtro.
+La fase financiera añade filtros de sucursal en **Estados Financieros** y **Proyecciones**. Las RPC con firma de filtro conservan las funciones antiguas para compatibilidad con los demás módulos. La migración `20261030050232_20261029235000_reportes_financieros_por_sucursal.sql` ya está aplicada en Supabase; los otros módulos todavía no heredan automáticamente el filtro.
 
 ## Bodega: alcance actual y mejoras pendientes
 
