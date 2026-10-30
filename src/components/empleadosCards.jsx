@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { DollarSign, Pencil, Link2, Save } from "lucide-react";
+import { DollarSign, Pencil, Link2, Save, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
@@ -49,6 +49,8 @@ export default function EmpleadosCards({
     const { empresaId } = useEmpresa();
     const puedePagar = ROLES_PAGO.includes(rol);
     const puedeContabilizar = ["superadmin", "admin"].includes(rol);
+    const puedeAdministrarPin = ["superadmin", "admin"].includes(rol);
+    const [generandoPin, setGenerandoPin] = useState(false);
 
     /* ---- Modal Pagar Salario ---- */
     const [modalPago, setModalPago] = useState(false);
@@ -111,6 +113,33 @@ export default function EmpleadosCards({
     }, [nombre_completo, identificacion, email, telefono, id_departamento, id_puesto, salario_mensual, cuenta_bancaria, estado, clase_trabajador]);
 
     /* ---- Handlers ---- */
+    const generarPinAsistencia = async () => {
+        const confirmacion = await Swal.fire({
+            title: "¿Generar o restablecer PIN?",
+            text: "El PIN anterior dejará de funcionar. El nuevo PIN solo se mostrará una vez.",
+            icon: "warning",
+            ...SWAL_OPTS,
+            confirmButtonText: "Continuar",
+        });
+        if (!confirmacion.isConfirmed) return;
+
+        setGenerandoPin(true);
+        const { data: pin, error } = await supabase.rpc("generar_pin_asistencia", {
+            p_id_empleado: id_empleado,
+        });
+        setGenerandoPin(false);
+        if (error) return toast.error(`No se pudo generar el PIN: ${error.message}`);
+
+        await Swal.fire({
+            title: "PIN de asistencia generado",
+            text: `PIN de ${nombre_completo}: ${pin}. Anótalo o entrégalo ahora; no se podrá volver a consultar.`,
+            icon: "success",
+            confirmButtonText: "Entendido",
+            background: "#1e1e1e",
+            color: "#fff",
+        });
+    };
+
     const abrirPago = async () => {
         const { data, error } = await supabase
             .from("nomina_detalle")
@@ -356,6 +385,15 @@ export default function EmpleadosCards({
                     {id_perfil && <p className="text-xs text-green-500">Cuenta del panel vinculada</p>}
                 </div>
                 <div className="flex flex-row flex-wrap gap-3 items-center mt-4 md:mt-0">
+                    {puedeAdministrarPin && (
+                        <button
+                            onClick={generarPinAsistencia}
+                            disabled={generandoPin}
+                            className="border border-secondary text-blue-400 p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition flex items-center gap-1"
+                        >
+                            <KeyRound size={14} /> {generandoPin ? "Generando..." : "Generar/restablecer PIN"}
+                        </button>
+                    )}
                     <button
                         onClick={handleDarDeBaja}
                         disabled={estado === "Inactivo"}

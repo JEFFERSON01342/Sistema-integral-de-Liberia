@@ -41,6 +41,7 @@ import LibroMayor from '../pages/libroMayor';
 import Comprobantes from '../pages/comprobantes';
 import AntiguedadSaldos from '../pages/antiguedadSaldos';
 import ConciliacionBancaria from '../pages/conciliacionBancaria';
+import KioscoAsistencia from '../pages/kioscoAsistencia';
 
 const router = createBrowserRouter([
   {
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
                   { path: 'gastosFijos', element: <GastosFijos /> },
                   { path: 'personal', element: <Personal /> },
                   { path: 'recursosHumanos', element: <RecursosHumanos /> },
+                  { path: 'kioscoAsistencia', element: <KioscoAsistencia /> },
                   { path: 'marketing', element: <Marketing /> },
                   { path: 'estadosFinancieros', element: <EstadosFinancieros /> },
                   { path: 'analisis', element: <AnalisisFinanciero /> },

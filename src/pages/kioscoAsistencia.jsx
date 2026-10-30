@@ -1,0 +1,165 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Clock, KeyRound, RefreshCw, UserCheck } from "lucide-react";
+import { toast } from "react-hot-toast";
+import { supabase } from "../supabase/supabaseclient";
+
+const horaVisible = (hora) => hora?.slice(0, 5) || "—";
+
+export default function KioscoAsistencia() {
+  const [empleados, setEmpleados] = useState([]);
+  const [idEmpleado, setIdEmpleado] = useState("");
+  const [pin, setPin] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [registrando, setRegistrando] = useState(false);
+
+  const cargarEmpleados = useCallback(async () => {
+    setCargando(true);
+    const { data, error } = await supabase.rpc("listar_empleados_kiosco_asistencia");
+    if (error) {
+      toast.error(`No se pudo cargar el personal de la sucursal: ${error.message}`);
+      setCargando(false);
+      return;
+    }
+
+    setEmpleados(data || []);
+    setCargando(false);
+  }, []);
+
+  useEffect(() => {
+    cargarEmpleados();
+  }, [cargarEmpleados]);
+
+  const empleadoSeleccionado = useMemo(
+    () => empleados.find((empleado) => String(empleado.id_empleado) === idEmpleado),
+    [empleados, idEmpleado]
+  );
+  const asistenciaCompleta = Boolean(
+    empleadoSeleccionado?.hora_entrada && empleadoSeleccionado?.hora_salida
+  );
+  const tipoMarcacion = empleadoSeleccionado?.hora_entrada ? "salida" : "entrada";
+
+  const registrar = async (event) => {
+    event.preventDefault();
+    if (!empleadoSeleccionado) return toast.error("Selecciona tu nombre.");
+
+    setRegistrando(true);
+    const { data, error } = await supabase.rpc("registrar_marcacion_kiosco_asistencia", {
+      p_id_empleado: empleadoSeleccionado.id_empleado,
+      p_pin: pin,
+    });
+    setRegistrando(false);
+
+    if (error) return toast.error(`No se pudo registrar la asistencia: ${error.message}`);
+    if (!data?.success) return toast.error(data?.message || "No se pudo validar el PIN.");
+
+    toast.success(`${data.message} Hora: ${horaVisible(data.hora)}`);
+    setPin("");
+    await cargarEmpleados();
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-3xl">
+      <header className="mb-6 flex flex-col gap-2">
+        <div className="flex items-center gap-3">
+          <span className="rounded-xl bg-button/20 p-3 text-title"><Clock size={24} /></span>
+          <div>
+            <h1 className="text-title text-2xl font-bold">Kiosco de asistencia</h1>
+            <p className="text-subtitle text-sm">Cuenta vinculada a su sucursal</p>
+          </div>
+        </div>
+        <p className="text-subtitle">
+          Selecciona tu nombre e introduce tu PIN personal para registrar la entrada o salida.
+        </p>
+      </header>
+
+      <form onSubmit={registrar} className="flex flex-col gap-5 rounded-2xl border border-secondary bg-card p-5 sm:p-7">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="empleado-asistencia" className="text-title text-sm font-semibold">
+            Empleado
+          </label>
+          <select
+            id="empleado-asistencia"
+            value={idEmpleado}
+            onChange={(event) => setIdEmpleado(event.target.value)}
+            disabled={cargando}
+            required
+            className="rounded-lg border border-secondary bg-input p-3 text-title"
+          >
+            <option value="">
+              {cargando ? "Cargando personal..." : "Selecciona tu nombre"}
+            </option>
+            {empleados.map((empleado) => (
+              <option key={empleado.id_empleado} value={empleado.id_empleado}>
+                {empleado.nombre_completo}
+                {empleado.hora_entrada
+                  ? ` · Entrada ${horaVisible(empleado.hora_entrada)}`
+                  : ""}
+                {empleado.hora_salida
+                  ? ` · Salida ${horaVisible(empleado.hora_salida)}`
+                  : ""}
+              </option>
+            ))}
+          </select>
+          {!cargando && empleados.length === 0 && (
+            <p className="text-sm text-subtitle">No hay empleados activos en esta sucursal.</p>
+          )}
+        </div>
+
+        {empleadoSeleccionado && (
+          <div className="rounded-xl border border-secondary p-4 text-sm">
+            <p className="mb-2 flex items-center gap-2 font-semibold text-title">
+              <UserCheck size={17} /> Registro de hoy
+            </p>
+            <p className="text-subtitle">Entrada: {horaVisible(empleadoSeleccionado.hora_entrada)}</p>
+            <p className="text-subtitle">Salida: {horaVisible(empleadoSeleccionado.hora_salida)}</p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="pin-asistencia" className="text-title text-sm font-semibold">
+            PIN personal de 6 dígitos
+          </label>
+          <div className="relative">
+            <KeyRound size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-subtitle" />
+            <input
+              id="pin-asistencia"
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={pin}
+              onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              required
+              className="w-full rounded-lg border border-secondary bg-input p-3 pl-10 text-title tracking-[0.3em]"
+              placeholder="••••••"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={cargando || registrando || !empleadoSeleccionado || asistenciaCompleta || pin.length !== 6}
+          className="flex items-center justify-center gap-2 rounded-lg bg-button px-4 py-3 font-semibold text-button disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Clock size={18} />
+          {registrando
+            ? "Registrando..."
+            : asistenciaCompleta
+              ? "Entrada y salida completas"
+              : `Registrar ${tipoMarcacion}`}
+        </button>
+      </form>
+
+      <button
+        type="button"
+        onClick={cargarEmpleados}
+        disabled={cargando}
+        className="mt-4 flex items-center gap-2 text-sm text-subtitle hover:text-title disabled:opacity-50"
+      >
+        <RefreshCw size={15} className={cargando ? "animate-spin" : ""} />
+        Actualizar lista
+      </button>
+    </div>
+  );
+}

@@ -67,6 +67,7 @@ const navGroups = [
         section: "Recursos Humanos",
         links: [
             { to: "recursosHumanos", label: 'Recursos Humanos', icon: HardHat, roles: ["admin"] },
+            { to: "kioscoAsistencia", label: 'Kiosco de Asistencia', icon: Clock, roles: ["asistencia"] },
         ],
     },
     {
@@ -124,6 +125,7 @@ const ROL_LABEL = {
     bodega: "Supervisor de Bodega",
     cajero: "Cajero",
     despacho: "Despacho",
+    asistencia: "Kiosco de asistencia",
 };
 
 // Filtra un grupo de enlaces según el rol.

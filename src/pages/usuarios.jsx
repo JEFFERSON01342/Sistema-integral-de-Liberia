@@ -12,9 +12,12 @@ const SUPERADMIN_ROLES = [
   { value: "bodega", label: "Supervisor de Bodega" },
   { value: "cajero", label: "Cajero" },
   { value: "despacho", label: "Despacho" },
+  { value: "asistencia", label: "Kiosco de asistencia" },
 ];
 
-const ADMIN_ROLES = SUPERADMIN_ROLES.filter(({ value }) => value !== "admin");
+const ADMIN_ROLES = SUPERADMIN_ROLES.filter(({ value }) => (
+  value !== "admin" && value !== "asistencia"
+));
 
 const ROL_LABEL = {
   superadmin: "Super Administrador",
@@ -24,6 +27,7 @@ const ROL_LABEL = {
   bodega: "Supervisor de Bodega",
   cajero: "Cajero",
   despacho: "Despacho",
+  asistencia: "Kiosco de asistencia",
 };
 
 const EMPTY_FORM = { email: "", rol: "cajero", id_sucursal: "" };

@@ -42,6 +42,7 @@ export const ROUTE_ROLES = {
   reportes:          ["admin", "gerente"],
 
   // Soporte / cuenta
+  kioscoAsistencia:  ["asistencia"],
   ticketsIT:         ["admin", "gerente", "cajero"],
   configuracion:     ["admin", "gerente", "cajero", "despacho"],
 
@@ -68,5 +69,6 @@ export const rutaInicio = (rol) => {
   if (rol === "gerente") return "/dashboard/reportes";
   if (rol === "contador") return "/dashboard/comprobantes";
   if (rol === "bodega") return "/dashboard/bodega";
+  if (rol === "asistencia") return "/dashboard/kioscoAsistencia";
   return "/dashboard/ventas";
 };

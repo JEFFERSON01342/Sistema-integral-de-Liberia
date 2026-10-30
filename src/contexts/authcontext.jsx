@@ -137,7 +137,7 @@ export const AuthProvider = ({ children }) => {
     // Verificar que el usuario sea STAFF. Los clientes NO entran aquí.
     // Roles con acceso al panel: superadmin, admin, gerente, contador, cajero, despacho y bodega.
     const p = await cargarPerfil(data.user.id);
-    const ROLES_STAFF = ["superadmin", "admin", "gerente", "contador", "cajero", "despacho", "bodega"];
+    const ROLES_STAFF = ["superadmin", "admin", "gerente", "contador", "cajero", "despacho", "bodega", "asistencia"];
     if (!p || !ROLES_STAFF.includes(p.rol)) {
       // scope:'local' para no afectar sesiones de otras apps
       await supabase.auth.signOut({ scope: "local" });
