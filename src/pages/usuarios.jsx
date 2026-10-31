@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Users, Pencil, Save, X, ShieldCheck, Filter, KeyRound, Monitor } from "lucide-react";
+import { Users, Pencil, Save, X, ShieldCheck, Filter, KeyRound, Monitor, Eye, EyeOff } from "lucide-react";
 import { supabase } from "../supabase/supabaseclient";
 import { useAuth } from "../contexts/authcontext";
 import StatsCards from "../components/statscards";
@@ -47,6 +47,7 @@ export default function Usuarios() {
   const [empleadoCuentaSeleccionado, setEmpleadoCuentaSeleccionado] = useState("");
   const [correoCuentaNueva, setCorreoCuentaNueva] = useState("");
   const [contrasenaCuentaNueva, setContrasenaCuentaNueva] = useState("");
+  const [mostrarContrasena, setMostrarContrasena] = useState(false);
   const [sucursalKiosco, setSucursalKiosco] = useState("");
   const [cargandoEmpleados, setCargandoEmpleados] = useState(false);
   const [guardandoCuentaNueva, setGuardandoCuentaNueva] = useState(false);
@@ -109,6 +110,7 @@ export default function Usuarios() {
     setTipoCuentaNueva("empleado");
     setEmpleadoCuentaSeleccionado("");
     setContrasenaCuentaNueva("");
+    setMostrarContrasena(false);
     setCargandoEmpleados(true);
     let query = supabase
       .from("empleados")
@@ -129,6 +131,7 @@ export default function Usuarios() {
     setTipoCuentaNueva("kiosco");
     setCorreoCuentaNueva("");
     setContrasenaCuentaNueva("");
+    setMostrarContrasena(false);
     setSucursalKiosco(esSuperadmin ? "" : String(perfil?.id_sucursal || ""));
     setModalCuentaNueva(true);
   };
@@ -433,15 +436,26 @@ export default function Usuarios() {
               )}
               <label className="flex flex-col gap-2 text-sm font-semibold">
                 Contraseña temporal
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={12}
-                  required
-                  value={contrasenaCuentaNueva}
-                  onChange={(event) => setContrasenaCuentaNueva(event.target.value)}
-                  className="rounded-lg border border-secondary bg-input p-3 font-normal"
-                />
+                <div className="relative">
+                  <input
+                    type={mostrarContrasena ? "text" : "password"}
+                    autoComplete="new-password"
+                    minLength={12}
+                    required
+                    value={contrasenaCuentaNueva}
+                    onChange={(event) => setContrasenaCuentaNueva(event.target.value)}
+                    className="w-full rounded-lg border border-secondary bg-input p-3 pr-11 font-normal"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMostrarContrasena((actual) => !actual)}
+                    aria-label={mostrarContrasena ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    aria-pressed={mostrarContrasena}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-subtitle hover:text-title"
+                  >
+                    {mostrarContrasena ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
                 <span className="text-xs font-normal text-subtitle">
                   Mínimo 12 caracteres. La persona deberá cambiarla en su primer inicio de sesión.
                 </span>
