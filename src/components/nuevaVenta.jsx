@@ -1,6 +1,7 @@
-import { Plus, Save, Trash, ScanLine, Search, UserCheck, X } from "lucide-react";
+import { Plus, Save, Trash, ScanLine, Search, UserCheck, X, Camera } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
+import { Html5QrcodeScanner, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { useProductos } from "../hooks/useProductos";
 import { useVenta } from "../hooks/useVenta";
 import { generarFacturaPDF } from "../utils/generarFacturaPDF";
@@ -19,6 +20,7 @@ export default function NuevaVenta({ onClose }) {
   const { empresaId } = useEmpresa();
   const { rol, user, perfil } = useAuth();
   const [codigoBarras, setCodigoBarras] = useState("");
+  const [lectorAbierto, setLectorAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [sesionCaja, setSesionCaja] = useState(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
@@ -32,6 +34,7 @@ export default function NuevaVenta({ onClose }) {
   const [resultados, setResultados] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const codigoInputRef = useRef(null);
+  const procesarEscaneoRef = useRef(null);
   const claveVentaRef = useRef(null);
   const [cotizacion, setCotizacion] = useState(null);
   const [cotizando, setCotizando] = useState(false);
@@ -301,6 +304,41 @@ export default function NuevaVenta({ onClose }) {
     requestAnimationFrame(() => codigoInputRef.current?.focus());
   };
 
+  procesarEscaneoRef.current = handleEscanear;
+
+  useEffect(() => {
+    if (!lectorAbierto) return undefined;
+
+    let escaneoProcesado = false;
+    const scanner = new Html5QrcodeScanner("pos-barcode-reader", {
+      fps: 10,
+      qrbox: { width: 280, height: 140 },
+      rememberLastUsedCamera: true,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.ITF,
+      ],
+    });
+
+    scanner.render((codigo) => {
+      if (escaneoProcesado) return;
+      escaneoProcesado = true;
+      setLectorAbierto(false);
+      procesarEscaneoRef.current?.(codigo);
+    }, () => {});
+
+    return () => {
+      scanner.clear().catch((error) => {
+        console.error("No se pudo detener el lector de código de barras:", error);
+      });
+    };
+  }, [lectorAbierto]);
+
   const handleAddProduct = () => {
     const producto = productos.find((item) => String(item.id_producto) === String(selectedProductId));
     if (!producto) {
@@ -490,18 +528,27 @@ export default function NuevaVenta({ onClose }) {
             <label htmlFor="codigoBarras" className="text-sm font-medium flex items-center gap-2">
               <ScanLine size={16} /> Escanear código de barras
             </label>
-            <input
-              ref={codigoInputRef}
-              id="codigoBarras"
-              type="text"
-              value={codigoBarras}
-              onChange={(event) => setCodigoBarras(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); handleEscanear(codigoBarras); } }}
-              placeholder="Escanea el código y presiona Enter"
-              autoComplete="off"
-              autoFocus
-              className="bg-input border border-secondary rounded-lg p-3"
-            />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                ref={codigoInputRef}
+                id="codigoBarras"
+                type="text"
+                value={codigoBarras}
+                onChange={(event) => setCodigoBarras(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); handleEscanear(codigoBarras); } }}
+                placeholder="Escanea el código y presiona Enter"
+                autoComplete="off"
+                autoFocus
+                className="min-w-0 flex-1 bg-input border border-secondary rounded-lg p-3"
+              />
+              <button
+                type="button"
+                onClick={() => setLectorAbierto(true)}
+                className="btn-secondary inline-flex items-center justify-center gap-2 whitespace-nowrap"
+              >
+                <Camera size={18} /> Abrir cámara
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
@@ -589,6 +636,33 @@ export default function NuevaVenta({ onClose }) {
                 <input id="efectivoRecibido" type="number" min={totalVenta} step="0.01" value={efectivoRecibido}
                   onChange={(event) => setEfectivoRecibido(event.target.value)}
                   className="bg-input border border-secondary rounded-lg p-3" />
+              </div>
+            )}
+            {lectorAbierto && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+                <div className="absolute inset-0" onClick={() => setLectorAbierto(false)} />
+                <div className="relative z-10 w-full max-w-lg rounded-2xl border border-secondary bg-card p-5 text-title shadow-2xl">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold">Escanear código de barras</h3>
+                      <p className="text-sm text-subtitle">Permite el acceso a la cámara y apunta al código del producto.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLectorAbierto(false)}
+                      className="text-subtitle hover:text-title"
+                      aria-label="Cerrar escáner"
+                    >
+                      <X />
+                    </button>
+                  </div>
+                  <div id="pos-barcode-reader" className="overflow-hidden rounded-lg" />
+                  <div className="mt-4 flex justify-end">
+                    <button type="button" onClick={() => setLectorAbierto(false)} className="btn-secondary">
+                      Cerrar escáner
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
