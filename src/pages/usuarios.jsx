@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Users, Plus, Pencil, Save, X, Mail, ShieldCheck, Filter } from "lucide-react";
+import { Users, Plus, Pencil, Save, X, Mail, ShieldCheck, Filter, KeyRound, Monitor } from "lucide-react";
 import { supabase } from "../supabase/supabaseclient";
 import { useAuth } from "../contexts/authcontext";
 import StatsCards from "../components/statscards";
@@ -41,6 +41,15 @@ export default function Usuarios() {
   const [isLoading, setIsLoading] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalCuentaNueva, setModalCuentaNueva] = useState(false);
+  const [tipoCuentaNueva, setTipoCuentaNueva] = useState("empleado");
+  const [empleadosSinCuenta, setEmpleadosSinCuenta] = useState([]);
+  const [empleadoCuentaSeleccionado, setEmpleadoCuentaSeleccionado] = useState("");
+  const [correoCuentaNueva, setCorreoCuentaNueva] = useState("");
+  const [contrasenaCuentaNueva, setContrasenaCuentaNueva] = useState("");
+  const [sucursalKiosco, setSucursalKiosco] = useState("");
+  const [cargandoEmpleados, setCargandoEmpleados] = useState(false);
+  const [guardandoCuentaNueva, setGuardandoCuentaNueva] = useState(false);
   const [editando, setEditando] = useState(null);
   const [filtroRol, setFiltroRol] = useState("");
   const [filtroSucursal, setFiltroSucursal] = useState("");
@@ -90,6 +99,82 @@ export default function Usuarios() {
   const nombreSucursal = (idSucursal) => (
     sucursales.find((sucursal) => sucursal.id_sucursal === idSucursal)?.nombre || "—"
   );
+
+  const empleadoCuentaActual = empleadosSinCuenta.find(
+    (empleado) => String(empleado.id_empleado) === empleadoCuentaSeleccionado
+  );
+
+  const abrirCrearCuentaEmpleado = async () => {
+    if (!perfil?.id_empresa) return toast.error("El perfil no tiene una empresa asignada.");
+    setTipoCuentaNueva("empleado");
+    setEmpleadoCuentaSeleccionado("");
+    setContrasenaCuentaNueva("");
+    setCargandoEmpleados(true);
+    let query = supabase
+      .from("empleados")
+      .select("id_empleado, nombre_completo, email, id_sucursal")
+      .eq("id_empresa", perfil.id_empresa)
+      .eq("estado", "Activo")
+      .is("id_perfil", null)
+      .order("nombre_completo");
+    if (!esSuperadmin) query = query.eq("id_sucursal", perfil.id_sucursal);
+    const { data, error } = await query;
+    setCargandoEmpleados(false);
+    if (error) return toast.error(`No se pudieron cargar los empleados: ${error.message}`);
+    setEmpleadosSinCuenta(data || []);
+    setModalCuentaNueva(true);
+  };
+
+  const abrirCrearCuentaKiosco = () => {
+    setTipoCuentaNueva("kiosco");
+    setCorreoCuentaNueva("");
+    setContrasenaCuentaNueva("");
+    setSucursalKiosco(esSuperadmin ? "" : String(perfil?.id_sucursal || ""));
+    setModalCuentaNueva(true);
+  };
+
+  const crearCuentaNueva = async (event) => {
+    event.preventDefault();
+    if (contrasenaCuentaNueva.length < 12) {
+      return toast.error("La contraseña temporal debe tener al menos 12 caracteres.");
+    }
+
+    const empleado = tipoCuentaNueva === "empleado" ? empleadoCuentaActual : null;
+    if (tipoCuentaNueva === "empleado" && !empleado) {
+      return toast.error("Selecciona un empleado.");
+    }
+    const email = tipoCuentaNueva === "empleado"
+      ? empleado?.email?.trim().toLowerCase()
+      : correoCuentaNueva.trim().toLowerCase();
+    if (!email) return toast.error("El empleado debe tener un correo en su ficha.");
+
+    setGuardandoCuentaNueva(true);
+    const { data, error } = await supabase.functions.invoke("gestion-cuenta-empleado", {
+      body: tipoCuentaNueva === "empleado"
+        ? {
+          action: "create",
+          id_empleado: empleado.id_empleado,
+          email,
+          password: contrasenaCuentaNueva,
+        }
+        : {
+          action: "create_kiosk",
+          email,
+          id_sucursal: Number(sucursalKiosco),
+          password: contrasenaCuentaNueva,
+        },
+    });
+    setGuardandoCuentaNueva(false);
+    if (error) {
+      const detail = await error.context?.json().catch(() => null);
+      return toast.error(`No se pudo crear la cuenta: ${detail?.error || error.message}`);
+    }
+    if (data?.error) return toast.error(`No se pudo crear la cuenta: ${data.error}`);
+
+    toast.success(data?.message || "Cuenta creada.");
+    setModalCuentaNueva(false);
+    await cargar();
+  };
 
   const abrirNuevo = () => {
     setEditando(null);
@@ -155,12 +240,22 @@ export default function Usuarios() {
           <div className="flex flex-col gap-1">
             <h3 className="text-title text-xl font-bold">Accesos del personal</h3>
             <p className="text-subtitle text-sm">
-              Asigna roles a cuentas registradas y con correo confirmado. Las contraseñas se gestionan desde Supabase Auth.
+              Crea cuentas desde la ficha del empleado o asigna una cuenta existente a la sucursal.
             </p>
           </div>
-          <button className="btn-primary" onClick={abrirNuevo}>
-            <Plus size={18} /> Asignar acceso
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" onClick={abrirCrearCuentaEmpleado} disabled={cargandoEmpleados}>
+              <KeyRound size={18} /> Crear acceso desde empleado
+            </button>
+            {esSuperadmin && (
+              <button className="btn-secondary" onClick={abrirCrearCuentaKiosco}>
+                <Monitor size={18} /> Crear cuenta kiosco
+              </button>
+            )}
+            <button className="btn-secondary" onClick={abrirNuevo}>
+              <Plus size={18} /> Asignar cuenta existente
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 mt-5">
@@ -268,6 +363,114 @@ export default function Usuarios() {
                 </div>
               ) : (
                 <p className="text-sm text-subtitle">El acceso quedará limitado a tu sucursal: {nombreSucursal(perfil?.id_sucursal)}.</p>
+              )}
+
+              {modalCuentaNueva && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+                  <div className="absolute inset-0" onClick={() => setModalCuentaNueva(false)} />
+                  <div className="relative z-10 w-full max-w-lg rounded-2xl border border-secondary bg-card p-7 text-title shadow-2xl">
+                    <div className="mb-6 flex items-center justify-between">
+                      <h3 className="text-xl font-bold">
+                        {tipoCuentaNueva === "empleado" ? "Crear acceso desde empleado" : "Crear cuenta de kiosco"}
+                      </h3>
+                      <button onClick={() => setModalCuentaNueva(false)} className="text-subtitle hover:text-title">
+                        <X />
+                      </button>
+                    </div>
+                    <form onSubmit={crearCuentaNueva} className="flex flex-col gap-4">
+                      {tipoCuentaNueva === "empleado" ? (
+                        <>
+                          <label className="flex flex-col gap-2 text-sm font-semibold">
+                            Empleado sin cuenta vinculada
+                            <select
+                              value={empleadoCuentaSeleccionado}
+                              onChange={(event) => setEmpleadoCuentaSeleccionado(event.target.value)}
+                              required
+                              className="rounded-lg border border-secondary bg-input p-3 font-normal"
+                            >
+                              <option value="">Selecciona un empleado</option>
+                              {empleadosSinCuenta.map((empleado) => (
+                                <option key={empleado.id_empleado} value={empleado.id_empleado}>
+                                  {empleado.nombre_completo}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="flex flex-col gap-2">
+                            <label className="text-sm font-semibold">Correo de la ficha del empleado</label>
+                            <input
+                              type="email"
+                              value={empleadoCuentaActual?.email || ""}
+                              readOnly
+                              className="rounded-lg border border-secondary bg-input p-3 opacity-80"
+                            />
+                            {!empleadoCuentaActual?.email && (
+                              <p className="text-xs text-amber-400">
+                                Primero agrega el correo en la ficha del empleado desde Recursos Humanos.
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <label className="flex flex-col gap-2 text-sm font-semibold">
+                            Correo de la cuenta del kiosco
+                            <input
+                              type="email"
+                              required
+                              value={correoCuentaNueva}
+                              onChange={(event) => setCorreoCuentaNueva(event.target.value)}
+                              className="rounded-lg border border-secondary bg-input p-3 font-normal"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-2 text-sm font-semibold">
+                            Sucursal
+                            <select
+                              value={sucursalKiosco}
+                              onChange={(event) => setSucursalKiosco(event.target.value)}
+                              required
+                              className="rounded-lg border border-secondary bg-input p-3 font-normal"
+                            >
+                              <option value="">Selecciona una sucursal</option>
+                              {sucursales.map((sucursal) => (
+                                <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>
+                                  {sucursal.nombre}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </>
+                      )}
+                      <label className="flex flex-col gap-2 text-sm font-semibold">
+                        Contraseña temporal
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          minLength={12}
+                          required
+                          value={contrasenaCuentaNueva}
+                          onChange={(event) => setContrasenaCuentaNueva(event.target.value)}
+                          className="rounded-lg border border-secondary bg-input p-3 font-normal"
+                        />
+                        <span className="text-xs font-normal text-subtitle">
+                          Mínimo 12 caracteres. La persona deberá cambiarla en su primer inicio de sesión.
+                        </span>
+                      </label>
+                      <div className="flex justify-end gap-3 pt-2">
+                        <button type="button" onClick={() => setModalCuentaNueva(false)} className="btn-secondary">
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={guardandoCuentaNueva || (tipoCuentaNueva === "empleado" && !empleadoCuentaActual?.email)}
+                          className="btn-primary disabled:opacity-50"
+                        >
+                          <Save size={18} /> {guardandoCuentaNueva ? "Creando..." : "Crear cuenta"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               )}
               <p className="text-xs text-subtitle">
                 La persona debe crear su cuenta y confirmar su correo antes de esta asignación. Este panel nunca recibe ni almacena su contraseña.

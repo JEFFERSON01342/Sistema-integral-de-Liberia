@@ -49,6 +49,7 @@ export default function EmpleadosCards({
     const { empresaId } = useEmpresa();
     const puedePagar = ROLES_PAGO.includes(rol);
     const puedeContabilizar = ["superadmin", "admin"].includes(rol);
+    const puedeVincularCuenta = ["superadmin", "admin"].includes(rol);
     const puedeAdministrarPin = ["superadmin", "admin"].includes(rol);
     const [generandoPin, setGenerandoPin] = useState(false);
 
@@ -66,6 +67,11 @@ export default function EmpleadosCards({
     const [fecha, setFecha] = useState(fechaHoyLocal);
     const [concepto, setConcepto] = useState("Pago de salario");
     const [modalPerfil, setModalPerfil] = useState(false);
+    const [modalCredenciales, setModalCredenciales] = useState(false);
+    const [modoCredenciales, setModoCredenciales] = useState("create");
+    const [correoCredencial, setCorreoCredencial] = useState(email || "");
+    const [contrasenaTemporal, setContrasenaTemporal] = useState("");
+    const [guardandoCredenciales, setGuardandoCredenciales] = useState(false);
     const [perfiles, setPerfiles] = useState([]);
     const [perfilSeleccionado, setPerfilSeleccionado] = useState(id_perfil || "");
     const [cargandoPerfiles, setCargandoPerfiles] = useState(false);
@@ -275,7 +281,9 @@ export default function EmpleadosCards({
             .select("id, nombre_completo, email, rol")
             .eq("id_empresa", empresaId)
             .eq("activo", true)
-            .neq("rol", "cliente")
+            .in("rol", rol === "superadmin"
+                ? ["admin", "gerente", "contador", "cajero", "despacho", "bodega"]
+                : ["gerente", "contador", "cajero", "despacho", "bodega"])
             .order("nombre_completo", { ascending: true });
         query = id_sucursal == null
             ? query.is("id_sucursal", null)
@@ -289,6 +297,42 @@ export default function EmpleadosCards({
         setPerfiles(data || []);
         setPerfilSeleccionado(id_perfil || "");
         setModalPerfil(true);
+    };
+
+    const abrirCredenciales = (modo) => {
+        setModoCredenciales(modo);
+        setCorreoCredencial(email || "");
+        setContrasenaTemporal("");
+        setModalCredenciales(true);
+    };
+
+    const guardarCredenciales = async (event) => {
+        event.preventDefault();
+        const correo = correoCredencial.trim().toLowerCase();
+        if (!correo) return toast.error("El correo de acceso es obligatorio.");
+        if (modoCredenciales === "create" && contrasenaTemporal.length < 12) {
+            return toast.error("La contraseña temporal debe tener al menos 12 caracteres.");
+        }
+
+        setGuardandoCredenciales(true);
+        const { data, error } = await supabase.functions.invoke("gestion-cuenta-empleado", {
+            body: {
+                action: modoCredenciales,
+                id_empleado,
+                email: correo,
+                ...(contrasenaTemporal ? { password: contrasenaTemporal } : {}),
+            },
+        });
+        setGuardandoCredenciales(false);
+        if (error) {
+            const detail = await error.context?.json().catch(() => null);
+            return toast.error(`No se pudo gestionar la cuenta: ${detail?.error || error.message}`);
+        }
+        if (data?.error) return toast.error(`No se pudo gestionar la cuenta: ${data.error}`);
+
+        toast.success(data?.message || "Acceso actualizado.");
+        setModalCredenciales(false);
+        onActualizar?.();
     };
 
     const guardarVinculoPerfil = async (e) => {
@@ -412,13 +456,22 @@ export default function EmpleadosCards({
                     {!rolAccesoPuesto && !id_perfil && (
                         <span className="text-xs text-subtitle">Sin acceso de sistema para este puesto</span>
                     )}
-                    {puedePagar && (
+                    {puedeVincularCuenta && (
+                        <button
+                            onClick={() => abrirCredenciales(id_perfil ? "update" : "create")}
+                            disabled={guardandoCredenciales}
+                            className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition flex items-center gap-1 disabled:opacity-60"
+                        >
+                            <KeyRound size={14} /> {id_perfil ? "Gestionar acceso" : "Crear cuenta"}
+                        </button>
+                    )}
+                    {puedeVincularCuenta && (
                         <button
                             onClick={abrirVinculoPerfil}
                             disabled={cargandoPerfiles}
                             className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition flex items-center gap-1 disabled:opacity-60"
                         >
-                            <Link2 size={14} /> {cargandoPerfiles ? "Cargando..." : id_perfil ? "Cambiar cuenta" : "Vincular cuenta"}
+                            <Link2 size={14} /> {cargandoPerfiles ? "Cargando..." : "Vincular cuenta existente"}
                         </button>
                     )}
                     <button
@@ -545,6 +598,71 @@ export default function EmpleadosCards({
                 document.body
             )}
 
+            {modalCredenciales && createPortal(
+                <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] backdrop-blur-sm p-4">
+                    <div className="absolute inset-0" onClick={() => setModalCredenciales(false)} />
+                    <div className="relative z-10 w-full max-w-md rounded-2xl border border-secondary bg-primary p-7 text-title shadow-2xl">
+                        <h3 className="mb-2 text-xl font-semibold">
+                            {modoCredenciales === "create" ? "Crear cuenta de acceso" : "Gestionar cuenta de acceso"}
+                        </h3>
+                        <p className="mb-5 text-sm text-subtitle">{nombre_completo}</p>
+                        <form onSubmit={guardarCredenciales} className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-2">
+                                <label htmlFor={`correo-acceso-${id_empleado}`} className="text-sm font-medium">
+                                    Correo de acceso
+                                </label>
+                                <input
+                                    id={`correo-acceso-${id_empleado}`}
+                                    type="email"
+                                    value={correoCredencial}
+                                    onChange={(event) => setCorreoCredencial(event.target.value)}
+                                    required
+                                    className="rounded-lg border border-secondary bg-input p-3"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <label htmlFor={`password-acceso-${id_empleado}`} className="text-sm font-medium">
+                                    {modoCredenciales === "create" ? "Contraseña temporal" : "Nueva contraseña temporal (opcional)"}
+                                </label>
+                                <input
+                                    id={`password-acceso-${id_empleado}`}
+                                    type="password"
+                                    autoComplete="new-password"
+                                    minLength={12}
+                                    value={contrasenaTemporal}
+                                    onChange={(event) => setContrasenaTemporal(event.target.value)}
+                                    required={modoCredenciales === "create"}
+                                    className="rounded-lg border border-secondary bg-input p-3"
+                                />
+                                <p className="text-xs text-subtitle">
+                                    Mínimo 12 caracteres. {modoCredenciales === "create"
+                                        ? "El empleado deberá cambiarla al iniciar sesión."
+                                        : "Si la dejas vacía, solo se cambiará el correo."}
+                                </p>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setModalCredenciales(false)}
+                                    className="rounded-lg border border-secondary px-5 py-2"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={guardandoCredenciales}
+                                    className="flex items-center gap-2 rounded-lg bg-button px-5 py-2 text-button disabled:opacity-60"
+                                >
+                                    <Save size={16} />
+                                    {guardandoCredenciales ? "Guardando..." : modoCredenciales === "create" ? "Crear cuenta" : "Guardar cambios"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>,
+                document.body
+            )}
+
             {/* ---- Modal Editar Empleado (portal) ---- */}
             {modalEdit && createPortal(
                 <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] backdrop-blur-sm">
@@ -562,7 +680,18 @@ export default function EmpleadosCards({
                             </div>
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium">Email</label>
-                                <input type="email" value={editForm.email} onChange={setEdit("email")} className="bg-input border border-secondary rounded-lg p-3" />
+                                <input
+                                    type="email"
+                                    value={editForm.email}
+                                    onChange={setEdit("email")}
+                                    readOnly={Boolean(id_perfil)}
+                                    className={`bg-input border border-secondary rounded-lg p-3 ${id_perfil ? "opacity-70" : ""}`}
+                                />
+                                {id_perfil && (
+                                    <span className="text-xs text-subtitle">
+                                        Cambia el correo de acceso desde «Gestionar acceso».
+                                    </span>
+                                )}
                             </div>
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium">Teléfono</label>

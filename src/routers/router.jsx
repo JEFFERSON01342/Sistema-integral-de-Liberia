@@ -42,6 +42,7 @@ import Comprobantes from '../pages/comprobantes';
 import AntiguedadSaldos from '../pages/antiguedadSaldos';
 import ConciliacionBancaria from '../pages/conciliacionBancaria';
 import KioscoAsistencia from '../pages/kioscoAsistencia';
+import CambiarContrasena from '../pages/cambiarContrasena';
 
 const router = createBrowserRouter([
   {
@@ -58,6 +59,10 @@ const router = createBrowserRouter([
       {
         element: <ProtectedRoute />, // El "guardia"
         children: [
+          {
+            path: 'cambiar-contrasena',
+            element: <CambiarContrasena />,
+          },
           {
             path: 'dashboard', // El layout principal
             element: <Dashboard />,

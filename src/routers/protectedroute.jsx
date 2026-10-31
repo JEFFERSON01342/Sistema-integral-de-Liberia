@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/authcontext";
 
 const AppSplash = () => (
@@ -19,7 +19,8 @@ const AppSplash = () => (
 );
 
 const ProtectedRoute = () => {
-  const { session, loading } = useAuth();
+  const { session, user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <AppSplash />;
@@ -27,6 +28,13 @@ const ProtectedRoute = () => {
 
   if (!session) {
     return <Navigate to="/login" replace />;
+  }
+  const requiereCambio = user?.user_metadata?.must_change_password === true;
+  if (requiereCambio && location.pathname !== "/cambiar-contrasena") {
+    return <Navigate to="/cambiar-contrasena" replace />;
+  }
+  if (!requiereCambio && location.pathname === "/cambiar-contrasena") {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <Outlet />;
