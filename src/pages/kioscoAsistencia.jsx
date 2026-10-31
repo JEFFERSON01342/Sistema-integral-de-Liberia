@@ -2,28 +2,70 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock, KeyRound, RefreshCw, UserCheck } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { supabase } from "../supabase/supabaseclient";
+import { useAuth } from "../contexts/authcontext";
 
 const horaVisible = (hora) => hora?.slice(0, 5) || "—";
 
 export default function KioscoAsistencia() {
+  const { perfil, rol } = useAuth();
   const [empleados, setEmpleados] = useState([]);
+  const [sucursales, setSucursales] = useState([]);
+  const [idSucursal, setIdSucursal] = useState("");
   const [idEmpleado, setIdEmpleado] = useState("");
   const [pin, setPin] = useState("");
   const [cargando, setCargando] = useState(true);
   const [registrando, setRegistrando] = useState(false);
+  const esSuperadmin = rol === "superadmin";
 
   const cargarEmpleados = useCallback(async () => {
+    if (!idSucursal) {
+      setEmpleados([]);
+      setIdEmpleado("");
+      setCargando(false);
+      return;
+    }
+
     setCargando(true);
-    const { data, error } = await supabase.rpc("listar_empleados_kiosco_asistencia");
+    const { data, error } = await supabase.rpc("listar_empleados_kiosco_asistencia", {
+      p_id_sucursal: Number(idSucursal),
+    });
     if (error) {
       toast.error(`No se pudo cargar el personal de la sucursal: ${error.message}`);
+      setEmpleados([]);
       setCargando(false);
       return;
     }
 
     setEmpleados(data || []);
+    setIdEmpleado("");
     setCargando(false);
-  }, []);
+  }, [idSucursal]);
+
+  useEffect(() => {
+    if (!perfil?.id_empresa) return;
+
+    if (!esSuperadmin) {
+      setIdSucursal(perfil.id_sucursal ? String(perfil.id_sucursal) : "");
+      return;
+    }
+
+    const cargarSucursales = async () => {
+      const { data, error } = await supabase
+        .from("sucursales")
+        .select("id_sucursal, nombre")
+        .eq("id_empresa", perfil.id_empresa)
+        .eq("activa", true)
+        .order("nombre");
+      if (error) {
+        toast.error(`No se pudieron cargar las sucursales: ${error.message}`);
+        return;
+      }
+      setSucursales(data || []);
+      setIdSucursal("");
+    };
+
+    cargarSucursales();
+  }, [esSuperadmin, perfil?.id_empresa, perfil?.id_sucursal]);
 
   useEffect(() => {
     cargarEmpleados();
@@ -46,6 +88,7 @@ export default function KioscoAsistencia() {
     const { data, error } = await supabase.rpc("registrar_marcacion_kiosco_asistencia", {
       p_id_empleado: empleadoSeleccionado.id_empleado,
       p_pin: pin,
+      p_id_sucursal: Number(idSucursal),
     });
     setRegistrando(false);
 
@@ -64,7 +107,9 @@ export default function KioscoAsistencia() {
           <span className="rounded-xl bg-button/20 p-3 text-title"><Clock size={24} /></span>
           <div>
             <h1 className="text-title text-2xl font-bold">Kiosco de asistencia</h1>
-            <p className="text-subtitle text-sm">Cuenta vinculada a su sucursal</p>
+            <p className="text-subtitle text-sm">
+              {esSuperadmin ? "Selecciona la sucursal que vas a consultar" : "Acceso limitado a tu sucursal"}
+            </p>
           </div>
         </div>
         <p className="text-subtitle">
@@ -73,6 +118,37 @@ export default function KioscoAsistencia() {
       </header>
 
       <form onSubmit={registrar} className="flex flex-col gap-5 rounded-2xl border border-secondary bg-card p-5 sm:p-7">
+        {esSuperadmin ? (
+          <div className="flex flex-col gap-2">
+            <label htmlFor="sucursal-asistencia" className="text-title text-sm font-semibold">
+              Sucursal
+            </label>
+            <select
+              id="sucursal-asistencia"
+              value={idSucursal}
+              onChange={(event) => {
+                setIdSucursal(event.target.value);
+                setIdEmpleado("");
+                setPin("");
+              }}
+              required
+              className="rounded-lg border border-secondary bg-input p-3 text-title"
+            >
+              <option value="">Selecciona una sucursal</option>
+              {sucursales.map((sucursal) => (
+                <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>
+                  {sucursal.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <p className="text-sm text-subtitle">
+            {perfil?.id_sucursal
+              ? `Sucursal asignada (#${perfil.id_sucursal})`
+              : "Sucursal asignada a tu cuenta"}
+          </p>
+        )}
         <div className="flex flex-col gap-2">
           <label htmlFor="empleado-asistencia" className="text-title text-sm font-semibold">
             Empleado
@@ -81,7 +157,7 @@ export default function KioscoAsistencia() {
             id="empleado-asistencia"
             value={idEmpleado}
             onChange={(event) => setIdEmpleado(event.target.value)}
-            disabled={cargando}
+            disabled={cargando || !idSucursal}
             required
             className="rounded-lg border border-secondary bg-input p-3 text-title"
           >

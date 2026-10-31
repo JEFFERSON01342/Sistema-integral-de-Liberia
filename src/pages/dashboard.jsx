@@ -67,7 +67,7 @@ const navGroups = [
         section: "Recursos Humanos",
         links: [
             { to: "recursosHumanos", label: 'Recursos Humanos', icon: HardHat, roles: ["admin"] },
-            { to: "kioscoAsistencia", label: 'Kiosco de Asistencia', icon: Clock, roles: ["asistencia"] },
+            { to: "kioscoAsistencia", label: 'Kiosco de Asistencia', icon: Clock, roles: ["admin", "asistencia"] },
         ],
     },
     {

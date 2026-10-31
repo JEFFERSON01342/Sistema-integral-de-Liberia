@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { DollarSign, Pencil, Link2, Save, KeyRound } from "lucide-react";
+import { DollarSign, Pencil, Save, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import Swal from "sweetalert2";
@@ -38,7 +38,6 @@ export default function EmpleadosCards({
     salario_mensual,
     clase_trabajador,
     frecuencia_pago,
-    id_sucursal,
     id_perfil,
     rolAccesoPuesto,
     estado,
@@ -66,16 +65,10 @@ export default function EmpleadosCards({
     const [metodo, setMetodo] = useState("Efectivo");
     const [fecha, setFecha] = useState(fechaHoyLocal);
     const [concepto, setConcepto] = useState("Pago de salario");
-    const [modalPerfil, setModalPerfil] = useState(false);
     const [modalCredenciales, setModalCredenciales] = useState(false);
-    const [modoCredenciales, setModoCredenciales] = useState("create");
     const [correoCredencial, setCorreoCredencial] = useState(email || "");
     const [contrasenaTemporal, setContrasenaTemporal] = useState("");
     const [guardandoCredenciales, setGuardandoCredenciales] = useState(false);
-    const [perfiles, setPerfiles] = useState([]);
-    const [perfilSeleccionado, setPerfilSeleccionado] = useState(id_perfil || "");
-    const [cargandoPerfiles, setCargandoPerfiles] = useState(false);
-    const [guardandoPerfil, setGuardandoPerfil] = useState(false);
     const [contabilizandoPago, setContabilizandoPago] = useState(false);
     const cuentasDisponiblesPago = cuentasPago.filter((cuenta) =>
         metodo === "Efectivo" ? cuenta.es_efectivo : cuenta.es_banco
@@ -274,33 +267,7 @@ export default function EmpleadosCards({
         onActualizar?.();
     };
 
-    const abrirVinculoPerfil = async () => {
-        setCargandoPerfiles(true);
-        let query = supabase
-            .from("perfiles")
-            .select("id, nombre_completo, email, rol")
-            .eq("id_empresa", empresaId)
-            .eq("activo", true)
-            .in("rol", rol === "superadmin"
-                ? ["admin", "gerente", "contador", "cajero", "despacho", "bodega"]
-                : ["gerente", "contador", "cajero", "despacho", "bodega"])
-            .order("nombre_completo", { ascending: true });
-        query = id_sucursal == null
-            ? query.is("id_sucursal", null)
-            : query.eq("id_sucursal", id_sucursal);
-        const { data, error } = await query;
-        setCargandoPerfiles(false);
-        if (error) {
-            toast.error(`No se pudieron cargar las cuentas de personal: ${error.message}`);
-            return;
-        }
-        setPerfiles(data || []);
-        setPerfilSeleccionado(id_perfil || "");
-        setModalPerfil(true);
-    };
-
-    const abrirCredenciales = (modo) => {
-        setModoCredenciales(modo);
+    const abrirCredenciales = () => {
         setCorreoCredencial(email || "");
         setContrasenaTemporal("");
         setModalCredenciales(true);
@@ -310,14 +277,10 @@ export default function EmpleadosCards({
         event.preventDefault();
         const correo = correoCredencial.trim().toLowerCase();
         if (!correo) return toast.error("El correo de acceso es obligatorio.");
-        if (modoCredenciales === "create" && contrasenaTemporal.length < 12) {
-            return toast.error("La contraseña temporal debe tener al menos 12 caracteres.");
-        }
-
         setGuardandoCredenciales(true);
         const { data, error } = await supabase.functions.invoke("gestion-cuenta-empleado", {
             body: {
-                action: modoCredenciales,
+                action: "update",
                 id_empleado,
                 email: correo,
                 ...(contrasenaTemporal ? { password: contrasenaTemporal } : {}),
@@ -333,25 +296,6 @@ export default function EmpleadosCards({
         toast.success(data?.message || "Acceso actualizado.");
         setModalCredenciales(false);
         onActualizar?.();
-    };
-
-    const guardarVinculoPerfil = async (e) => {
-        e.preventDefault();
-        setGuardandoPerfil(true);
-        try {
-            const { error } = await supabase.rpc("vincular_perfil_empleado", {
-                p_id_empleado: id_empleado,
-                p_id_perfil: perfilSeleccionado || null,
-            });
-            if (error) throw error;
-            toast.success("Vínculo de cuenta actualizado.");
-            setModalPerfil(false);
-            onActualizar?.();
-        } catch (error) {
-            toast.error(`No se pudo vincular la cuenta: ${error.message}`);
-        } finally {
-            setGuardandoPerfil(false);
-        }
     };
 
     const handleGuardarEdit = async (e) => {
@@ -456,23 +400,17 @@ export default function EmpleadosCards({
                     {!rolAccesoPuesto && !id_perfil && (
                         <span className="text-xs text-subtitle">Sin acceso de sistema para este puesto</span>
                     )}
-                    {puedeVincularCuenta && (
+                    {puedeVincularCuenta && id_perfil && (
                         <button
-                            onClick={() => abrirCredenciales(id_perfil ? "update" : "create")}
+                            onClick={abrirCredenciales}
                             disabled={guardandoCredenciales}
                             className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition flex items-center gap-1 disabled:opacity-60"
                         >
-                            <KeyRound size={14} /> {id_perfil ? "Gestionar acceso" : "Crear cuenta"}
+                            <KeyRound size={14} /> Gestionar acceso
                         </button>
                     )}
-                    {puedeVincularCuenta && (
-                        <button
-                            onClick={abrirVinculoPerfil}
-                            disabled={cargandoPerfiles}
-                            className="border border-secondary text-title p-2 rounded-[10px] text-xs cursor-pointer hover:scale-110 transition flex items-center gap-1 disabled:opacity-60"
-                        >
-                            <Link2 size={14} /> {cargandoPerfiles ? "Cargando..." : "Vincular cuenta existente"}
-                        </button>
+                    {puedeVincularCuenta && !id_perfil && (
+                        <span className="text-xs text-subtitle">Crear acceso desde Usuarios</span>
                     )}
                     <button
                         onClick={() => setModalEdit(true)}
@@ -564,46 +502,12 @@ export default function EmpleadosCards({
                 document.body
             )}
 
-            {modalPerfil && createPortal(
-                <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] backdrop-blur-sm">
-                    <div className="absolute inset-0" onClick={() => setModalPerfil(false)} />
-                    <div className="relative z-10 mx-4 bg-primary text-title p-8 rounded-2xl w-full max-w-md shadow-lg border border-secondary">
-                        <h3 className="text-xl font-semibold mb-2">Vincular cuenta de acceso</h3>
-                        <p className="text-sm text-subtitle mb-5">{nombre_completo}</p>
-                        <p className="text-xs text-subtitle mb-4">
-                            Al guardar, la cuenta recibirá el rol configurado en el puesto del empleado.
-                        </p>
-                        <form onSubmit={guardarVinculoPerfil} className="flex flex-col gap-5">
-                            <select
-                                value={perfilSeleccionado}
-                                onChange={(e) => setPerfilSeleccionado(e.target.value)}
-                                className="bg-input border border-secondary rounded-lg p-3"
-                            >
-                                <option value="">Sin cuenta vinculada</option>
-                                {perfiles.map((perfil) => (
-                                    <option key={perfil.id} value={perfil.id}>
-                                        {perfil.nombre_completo || perfil.email} — {perfil.rol}
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="flex justify-end gap-3">
-                                <button type="button" onClick={() => setModalPerfil(false)} className="bg-secondary border border-secondary py-2 px-5 rounded-lg">Cancelar</button>
-                                <button type="submit" disabled={guardandoPerfil} className="bg-button text-button py-2 px-5 rounded-lg flex items-center gap-2 disabled:opacity-60">
-                                    <Save size={16} /> {guardandoPerfil ? "Guardando..." : "Guardar"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>,
-                document.body
-            )}
-
             {modalCredenciales && createPortal(
                 <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] backdrop-blur-sm p-4">
                     <div className="absolute inset-0" onClick={() => setModalCredenciales(false)} />
                     <div className="relative z-10 w-full max-w-md rounded-2xl border border-secondary bg-primary p-7 text-title shadow-2xl">
                         <h3 className="mb-2 text-xl font-semibold">
-                            {modoCredenciales === "create" ? "Crear cuenta de acceso" : "Gestionar cuenta de acceso"}
+                            Gestionar cuenta de acceso
                         </h3>
                         <p className="mb-5 text-sm text-subtitle">{nombre_completo}</p>
                         <form onSubmit={guardarCredenciales} className="flex flex-col gap-4">
@@ -622,7 +526,7 @@ export default function EmpleadosCards({
                             </div>
                             <div className="flex flex-col gap-2">
                                 <label htmlFor={`password-acceso-${id_empleado}`} className="text-sm font-medium">
-                                    {modoCredenciales === "create" ? "Contraseña temporal" : "Nueva contraseña temporal (opcional)"}
+                                    Nueva contraseña temporal (opcional)
                                 </label>
                                 <input
                                     id={`password-acceso-${id_empleado}`}
@@ -631,13 +535,10 @@ export default function EmpleadosCards({
                                     minLength={12}
                                     value={contrasenaTemporal}
                                     onChange={(event) => setContrasenaTemporal(event.target.value)}
-                                    required={modoCredenciales === "create"}
                                     className="rounded-lg border border-secondary bg-input p-3"
                                 />
                                 <p className="text-xs text-subtitle">
-                                    Mínimo 12 caracteres. {modoCredenciales === "create"
-                                        ? "El empleado deberá cambiarla al iniciar sesión."
-                                        : "Si la dejas vacía, solo se cambiará el correo."}
+                                    Si defines una contraseña, el empleado deberá cambiarla al iniciar sesión. Si la dejas vacía, solo se cambiará el correo.
                                 </p>
                             </div>
                             <div className="flex justify-end gap-3 pt-2">
@@ -654,7 +555,7 @@ export default function EmpleadosCards({
                                     className="flex items-center gap-2 rounded-lg bg-button px-5 py-2 text-button disabled:opacity-60"
                                 >
                                     <Save size={16} />
-                                    {guardandoCredenciales ? "Guardando..." : modoCredenciales === "create" ? "Crear cuenta" : "Guardar cambios"}
+                                    {guardandoCredenciales ? "Guardando..." : "Guardar cambios"}
                                 </button>
                             </div>
                         </form>

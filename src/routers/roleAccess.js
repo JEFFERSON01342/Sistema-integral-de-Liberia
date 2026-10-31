@@ -42,7 +42,7 @@ export const ROUTE_ROLES = {
   reportes:          ["admin", "gerente"],
 
   // Soporte / cuenta
-  kioscoAsistencia:  ["asistencia"],
+  kioscoAsistencia:  ["admin", "asistencia"],
   ticketsIT:         ["admin", "gerente", "cajero"],
   configuracion:     ["admin", "gerente", "cajero", "despacho"],
 

@@ -198,22 +198,98 @@ Deno.serve(async (request: Request) => {
       return response({ error: "La contraseña temporal debe tener al menos 12 caracteres." }, 400);
     }
 
-    const { data: created, error: createError } = await adminClient.auth.admin.createUser({
-      email,
-      password: payload.password,
-      email_confirm: true,
-      user_metadata: {
-        nombre_completo: employee.nombre_completo,
-        telefono: employee.telefono,
-        must_change_password: true,
-      },
-    });
-    if (createError || !created.user) {
-      return response({
-        error: createError?.message.toLowerCase().includes("already")
-          ? "Ya existe una cuenta con ese correo. Vincúlala desde «Vincular cuenta existente»."
-          : createError?.message || "No se pudo crear la cuenta.",
-      }, 400);
+    const { data: matchingProfiles, error: matchingProfilesError } = await adminClient
+      .from("perfiles")
+      .select("id, rol, id_empresa, id_sucursal")
+      .eq("email", email)
+      .limit(2);
+    if (matchingProfilesError) {
+      console.error("No se pudo buscar una cuenta existente por correo:", matchingProfilesError.message);
+      return response({ error: "No se pudo validar si el correo ya tiene una cuenta." }, 500);
+    }
+    const profileMatches = matchingProfiles || [];
+    if (profileMatches.length > 1) {
+      return response({ error: "Hay varias cuentas con ese correo. Contacta al superadmin para resolverlo." }, 409);
+    }
+
+    let userId: string;
+    let isNewUser = false;
+    const existingProfile = profileMatches[0];
+    if (existingProfile) {
+      if (existingProfile.id === actor.id) {
+        return response({ error: "No puedes convertir tu propia cuenta en una cuenta de empleado." }, 403);
+      }
+      if (
+        existingProfile.rol === "superadmin"
+        || existingProfile.rol === "asistencia"
+        || (existingProfile.rol === "admin" && actor.rol !== "superadmin")
+      ) {
+        return response({ error: "Este correo ya pertenece a una cuenta administrativa que no se puede asignar al empleado." }, 403);
+      }
+      if (
+        (existingProfile.id_empresa && existingProfile.id_empresa !== employee.id_empresa)
+        || (existingProfile.id_sucursal && existingProfile.id_sucursal !== employee.id_sucursal)
+      ) {
+        return response({ error: "El correo ya está asociado a otra empresa o sucursal." }, 409);
+      }
+
+      const { data: linkedEmployees, error: linkedEmployeesError } = await adminClient
+        .from("empleados")
+        .select("id_empleado")
+        .eq("id_perfil", existingProfile.id)
+        .limit(1);
+      if (linkedEmployeesError) {
+        console.error("No se pudo comprobar si la cuenta está vinculada:", linkedEmployeesError.message);
+        return response({ error: "No se pudo validar el vínculo de la cuenta existente." }, 500);
+      }
+      if (linkedEmployees?.length) {
+        return response({ error: "La cuenta ya está vinculada a otro empleado." }, 409);
+      }
+
+      const { data: existingUser, error: existingUserError } =
+        await adminClient.auth.admin.getUserById(existingProfile.id);
+      if (existingUserError || !existingUser.user) {
+        console.error("No se pudo obtener la cuenta Auth existente:", existingUserError?.message);
+        return response({ error: "No se pudo validar la cuenta existente." }, 500);
+      }
+      const { error: updateUserError } = await adminClient.auth.admin.updateUserById(
+        existingProfile.id,
+        {
+          email,
+          email_confirm: true,
+          password: payload.password,
+          user_metadata: {
+            ...existingUser.user.user_metadata,
+            nombre_completo: employee.nombre_completo,
+            telefono: employee.telefono,
+            must_change_password: true,
+          },
+        },
+      );
+      if (updateUserError) {
+        return response({ error: updateUserError.message }, 400);
+      }
+      userId = existingProfile.id;
+    } else {
+      const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+        email,
+        password: payload.password,
+        email_confirm: true,
+        user_metadata: {
+          nombre_completo: employee.nombre_completo,
+          telefono: employee.telefono,
+          must_change_password: true,
+        },
+      });
+      if (createError || !created.user) {
+        return response({
+          error: createError?.message.toLowerCase().includes("already")
+            ? "Ya existe una cuenta con ese correo, pero no se encontró su perfil. Contacta al superadmin."
+            : createError?.message || "No se pudo crear la cuenta.",
+        }, 400);
+      }
+      userId = created.user.id;
+      isNewUser = true;
     }
 
     const { error: profileError } = await adminClient
@@ -227,28 +303,38 @@ Deno.serve(async (request: Request) => {
         id_sucursal: employee.id_sucursal,
         activo: true,
       })
-      .eq("id", created.user.id);
+      .eq("id", userId);
     if (profileError) {
-      await adminClient.auth.admin.deleteUser(created.user.id);
+      if (isNewUser) {
+        const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+        if (deleteError) console.error("No se pudo limpiar la cuenta tras un error de perfil:", deleteError.message);
+      }
       console.error("No se pudo preparar el perfil de la cuenta:", profileError.message);
       return response({ error: "Se creó la cuenta, pero no se pudo asignar el perfil. Intenta nuevamente." }, 500);
     }
 
     const { data: linkedEmployee, error: linkError } = await adminClient
       .from("empleados")
-      .update({ id_perfil: created.user.id, email })
+      .update({ id_perfil: userId, email })
       .eq("id_empleado", employee.id_empleado)
       .is("id_perfil", null)
       .select("id_empleado")
       .maybeSingle();
     if (linkError || !linkedEmployee) {
-      const { error: deleteError } = await adminClient.auth.admin.deleteUser(created.user.id);
-      if (deleteError) console.error("No se pudo limpiar la cuenta creada tras un error de vinculación:", deleteError.message);
+      if (isNewUser) {
+        const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+        if (deleteError) console.error("No se pudo limpiar la cuenta creada tras un error de vinculación:", deleteError.message);
+      }
       console.error("No se pudo vincular la cuenta al empleado:", linkError?.message || "El empleado ya tiene una cuenta vinculada.");
       return response({ error: "No se pudo vincular la cuenta al empleado." }, 500);
     }
 
-    return response({ success: true, message: "Cuenta creada y vinculada al empleado." });
+    return response({
+      success: true,
+      message: isNewUser
+        ? "Cuenta creada y vinculada al empleado."
+        : "Cuenta existente actualizada y vinculada al empleado.",
+    });
   }
 
   if (action !== "update") {
