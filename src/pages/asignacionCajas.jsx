@@ -62,7 +62,8 @@ export default function AsignacionCajas() {
       supabase.from("asignaciones_caja")
         .select("id, id_caja, id_cajero, turno, activo, id_sucursal")
         .eq("id_sucursal", sucursalSel).eq("activo", true),
-      supabase.from("sesiones_caja").select("id_sesion, id_caja, abierta_por, estado")
+      supabase.from("sesiones_caja")
+        .select("id_sesion, id_caja, abierta_por, abierta_en, fecha_operativa, estado")
         .eq("id_empresa", empresaId).eq("id_sucursal", sucursalSel).eq("estado", "ABIERTA"),
       supabase.from("perfiles").select("id, nombre_completo, rol")
         .eq("id_empresa", empresaId).eq("id_sucursal", sucursalSel)
@@ -87,7 +88,11 @@ export default function AsignacionCajas() {
     // Nombres de empleados (incluye los asignados aunque no estén en la lista filtrada)
     const mapaNombres = {};
     (emps || []).forEach((e) => { mapaNombres[e.id] = e.nombre_completo; });
-    const faltantes = (asig || []).map((a) => a.id_cajero).filter((id) => !mapaNombres[id]);
+    const idsEnUso = (abiertas || []).map((sesion) => sesion.abierta_por);
+    const faltantes = [...new Set([
+      ...(asig || []).map((a) => a.id_cajero),
+      ...idsEnUso,
+    ])].filter((id) => !mapaNombres[id]);
     if (faltantes.length) {
       const { data: extra, error: extraError } = await supabase
         .from("perfiles")
@@ -101,7 +106,10 @@ export default function AsignacionCajas() {
 
     setTerminales(term || []);
     setAsignaciones((asig || []).map((a) => ({ ...a, cajero_nombre: mapaNombres[a.id_cajero] || "—" })));
-    setCajasAbiertas(abiertas || []);
+    setCajasAbiertas((abiertas || []).map((sesion) => ({
+      ...sesion,
+      cajero_nombre: mapaNombres[sesion.abierta_por] || "Usuario sin perfil visible",
+    })));
     setEmpleados(emps || []);
     setIsLoading(false);
   }, [empresaId, sucursalSel]);
@@ -111,7 +119,7 @@ export default function AsignacionCajas() {
 
   // Helpers por terminal
   const asignacionDe = (idCaja) => asignaciones.find((a) => a.id_caja === idCaja) || null;
-  const estaEnUso = (idCaja) => cajasAbiertas.some((sesion) => sesion.id_caja === idCaja);
+  const sesionDe = (idCaja) => cajasAbiertas.find((sesion) => String(sesion.id_caja) === String(idCaja)) || null;
 
   const abrirModal = (idTerminal = "") => {
     setForm({ id_caja: idTerminal ? String(idTerminal) : "", id_cajero: "", turno: "Completo" });
@@ -169,7 +177,7 @@ export default function AsignacionCajas() {
         <div>
           <h2 className="text-title text-2xl font-bold">Asignación de Cajas</h2>
           <p className="text-subtitle text-sm">
-            Asigná qué empleado estará a cargo de cada caja (POS) y en qué turno.
+            Usuarios administra las cuentas y sus roles; aquí asignas qué cajero opera cada caja (POS) y en qué turno.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -218,16 +226,46 @@ export default function AsignacionCajas() {
               <tbody>
                 {terminales.map((t) => {
                   const a = asignacionDe(t.id_caja);
-                  const enUso = estaEnUso(t.id_caja);
+                  const sesion = sesionDe(t.id_caja);
+                  const enUso = Boolean(sesion);
                   return (
                     <tr key={t.id_caja} className="border-t border-secondary text-sm hover:bg-secondary transition-colors">
                       <td className="py-3 px-2 font-medium">{t.nombre}</td>
                       <td className="py-3 px-2 text-subtitle">{t.numero_serie || "—"}</td>
-                      <td className="py-3 px-2">{a ? a.cajero_nombre : <span className="text-subtitle italic">Sin asignar</span>}</td>
-                      <td className="py-3 px-2 text-center">{a ? a.turno : "—"}</td>
+                      <td className="py-3 px-2">
+                        {a ? (
+                          <div>
+                            <p>{a.cajero_nombre}</p>
+                            {sesion && (
+                              <p className="mt-1 text-xs text-green-400">
+                                En caja: {sesion.cajero_nombre}
+                                {sesion.abierta_por !== a.id_cajero && " (distinto al asignado)"}
+                              </p>
+                            )}
+                          </div>
+                        ) : sesion ? (
+                          <div>
+                            <p>{sesion.cajero_nombre}</p>
+                            <p className="mt-1 text-xs text-amber-400">En caja, sin asignación previa</p>
+                          </div>
+                        ) : (
+                          <span className="text-subtitle italic">Sin asignar</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-center">
+                        {a ? a.turno : <span className="text-subtitle">Sin turno asignado</span>}
+                      </td>
                       <td className="py-3 px-2 text-center">
                         {enUso ? (
-                          <span className="px-2 py-1 rounded-full text-xs font-semibold bg-purple-600/20 text-purple-300">En uso</span>
+                          <div>
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-purple-600/20 text-purple-300">En uso</span>
+                            <p className="mt-1 text-xs text-subtitle">
+                              Desde {new Date(sesion.abierta_en).toLocaleString("es-NI", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </p>
+                          </div>
                         ) : a ? (
                           <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-600/20 text-green-400">Asignada</span>
                         ) : (
